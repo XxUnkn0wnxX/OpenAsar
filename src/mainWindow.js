@@ -59,9 +59,26 @@ const findVersionInfo = () => firstNode(
   () => [...document.querySelectorAll('[class*="sidebar"] [class*="info"] [class*="line"]')].find(x => x.textContent?.startsWith('Host '))
 );
 
+const findAppSettingsItem = sidebar => {
+  const sections = [...(sidebar?.querySelectorAll('ul, [class*="section"]') ?? [])];
+  const appSection = firstNode(
+    () => sidebar?.querySelector('ul[aria-label="App Settings"]'),
+    () => sections.find(x => x.getAttribute?.('aria-label') === 'App Settings'),
+    () => sections.find(section => [...section.querySelectorAll('h1, h2, h3, [data-text-variant]')].some(x => x.textContent?.trim() === 'App Settings'))
+  );
+
+  const items = [
+    ...(appSection?.querySelectorAll?.('[role="listitem"]') ?? []),
+    ...(appSection?.querySelectorAll?.('[data-list-item-id^="settings-sidebar___"]') ?? [])
+  ];
+
+  return items[items.length - 1];
+};
+
 const findAdvancedItem = () => {
   const sidebar = findSettingsSidebar();
   return firstNode(
+    () => findAppSettingsItem(sidebar),
     () => sidebar?.querySelector('[data-list-item-id="settings-sidebar___advanced_sidebar_item"]'),
     () => sidebar?.querySelector('[data-list-item-id*="advanced"]'),
     () => sidebar?.querySelector('[data-settings-sidebar-item="advanced_panel"]')?.querySelector('[class*="item"]'),
@@ -103,10 +120,10 @@ const injectVersionInfo = () => {
 const injectSettingsItem = () => {
   if (document.getElementById('openasar-item')) return;
 
-  const advanced = findAdvancedItem();
-  if (!advanced) return;
+  const anchorItem = findAdvancedItem();
+  if (!anchorItem) return;
 
-  const oaSetting = advanced.cloneNode(true);
+  const oaSetting = anchorItem.cloneNode(true);
   const text = oaSetting.querySelector('[class*="text"]') ?? oaSetting;
 
   oaSetting.id = 'openasar-item';
@@ -118,7 +135,7 @@ const injectSettingsItem = () => {
   text.textContent = 'OpenAsar';
   oaSetting.onclick = openOpenAsarSettings;
 
-  advanced.insertAdjacentElement('afterend', oaSetting);
+  anchorItem.insertAdjacentElement('afterend', oaSetting);
 };
 
 let settingsObserver;
