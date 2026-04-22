@@ -22,7 +22,7 @@ npm i -g asar
 This keeps the default OpenAsar self-update behavior enabled.
 
 ```bash
-node scripts/pack.js --version nightly-$(git rev-parse --short HEAD) --output tmp/openasar-build/app.asar
+node scripts/pack.js --version nightly-$(git rev-parse --short HEAD) --output tmp/app.asar
 ```
 
 This build updates from the default upstream release repo:
@@ -35,21 +35,21 @@ GooseMod/OpenAsar
 Use this when you want a build to self-update from your own fork releases instead of upstream.
 
 ```bash
-node scripts/pack.js --update-repo owner/repo --version nightly-$(git rev-parse --short HEAD) --output tmp/openasar-build/app.asar
+node scripts/pack.js --update-repo owner/repo --version nightly-$(git rev-parse --short HEAD) --output tmp/app.asar
 ```
 
 ## Build With Auto-Update Disabled
 Use this for local testing when you do not want the built `app.asar` to replace itself with the upstream nightly release on launch.
 
 ```bash
-node scripts/pack.js --disable-autoupdate --version nightly-$(git rev-parse --short HEAD)-localtest --output tmp/openasar-build/app.asar
+node scripts/pack.js --disable-autoupdate --version nightly-$(git rev-parse --short HEAD)-localtest --output tmp/app.asar
 ```
 
 ## Output
 All commands above produce:
 
 ```text
-tmp/openasar-build/app.asar
+tmp/app.asar
 ```
 
 ## Optional GitHub Workflows

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-04-23
+
+### Sidebar follow-up
+
+- Refined the BetterDiscord-safe sidebar anchor search so OpenAsar prefers the `App Settings` section when it is present instead of attaching near BetterDiscord's own section.
+- Kept the broader fallback chain in `src/mainWindow.js` for Discord layouts where `App Settings` is missing or renamed, including the existing `Advanced`, `Developer`, and `Log Out` fallbacks.
+- Verified the revised sidebar hook against captured Discord settings DOM snapshots and packed a fresh local test archive at `tmp/app.asar`.
+- Cherry-picked [PR #234](https://github.com/GooseMod/OpenAsar/pull/234)'s sidebar icon change from SoCuul without rewriting authorship, so the current settings entry keeps the existing injection logic while using the custom goose icon.
+
 ## 2026-04-17
 
 ### BetterDiscord settings compatibility
@@ -20,7 +29,7 @@
 - Confirmed the DOM-only settings injection works once local test builds stop being overwritten by the self-updater.
 - Reverted the experimental hybrid settings patch and kept the DOM-only fix for the final code path.
 - Local test build command:
-  `node scripts/pack.js --disable-autoupdate --version nightly-$(git rev-parse --short HEAD)-localtest --output tmp/openasar-build/app.asar`
+  `node scripts/pack.js --disable-autoupdate --version nightly-$(git rev-parse --short HEAD)-localtest --output tmp/app.asar`
 - Added optional fork-oriented GitHub workflow templates for no-auto-update artifacts and custom update repos while leaving the main upstream nightly workflow unchanged.
 - Found and fixed a pack-time stamping bug where `scripts/pack.js` only replaced the first `<updateRepo>` placeholder even though `src/index.js` used that placeholder more than once.
 - Fixed that placeholder bug by changing the pack step to replace all `<updateRepo>` occurrences so packed builds do not keep half-stamped fallback logic.
@@ -31,4 +40,4 @@
 - Matched the extra workflows to the main pipeline by adding the same Linux stable/canary and Windows stable/canary startup smoke-test jobs plus the same release structure.
 - Kept the intended workflow differences narrow: one packs with `--disable-autoupdate` and publishes `nightly-no-autoupdate`, and the other packs with `--update-repo owner/repo` and publishes `nightly-fork`.
 - Verified the updated file with `node -c src/mainWindow.js`.
-- Verified the repo still packs locally by producing `tmp/pack-test/app.asar`.
+- Verified the repo still packs locally by producing `tmp/app.asar`.
