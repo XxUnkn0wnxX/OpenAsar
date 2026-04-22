@@ -11,7 +11,7 @@
 - **:gear: Configurable**: Adds many config options for Discord and OpenAsar enhancements (see config section)
 - **:cloud: Lightweight**: <1% of Discord's original size (9mb -> ~50kb)
 - **:shield: No Tracking**: Removes Discord's built-in tracking for crashes and errors in the asar (not app itself)
-- **:jigsaw: BetterDiscord Compatible**: This fork keeps the OpenAsar settings entry working with BetterDiscord installed
+- **:jigsaw: BetterDiscord Compatible**: This fork keeps the OpenAsar settings entry working with [BetterDiscord](https://github.com/BetterDiscord/BetterDiscord) installed
 
 ### See [FAQ](faq.md) for more details
 
