@@ -7,6 +7,7 @@
 - **:rocket: Startup Speed**: ~2x faster startup times (up to ~4x with experimental config)
 - **:chart_with_upwards_trend: Performance**: OpenAsar can make your client feel snappier (scrolling, switching channels, etc)
 - **:paintbrush: Splash Theming**: Easy theming for your splash which works with most themes for any client mod
+- **:jigsaw: BetterDiscord Compatible**: This fork keeps the OpenAsar settings entry working with BetterDiscord installed
 - **:electric_plug: Drop-in**: Replace one file and it's installed, that's it (same with uninstall)
 - **:gear: Configurable**: Adds many config options for Discord and OpenAsar enhancements (see config section)
 - **:cloud: Lightweight**: <1% of Discord's original size (9mb -> ~50kb)
