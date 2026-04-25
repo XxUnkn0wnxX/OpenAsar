@@ -104,14 +104,34 @@ jobs:
         wget "https://discord.com/api/download/canary?platform=linux&format=tar.gz" -O discord.tar.gz
         tar xf discord.tar.gz
 
-        CANARY_DIR="$(find . -maxdepth 3 -type d \( -name 'DiscordCanary' -o -name 'Discord Canary' -o -iname 'discord-canary*' \) | head -n1)"
-        if [ -z "$CANARY_DIR" ]; then
-          CANARY_DIR="$(find . -maxdepth 4 -type f \( -name 'DiscordCanary' -o -iname 'discord-canary*' \) -perm -111 | head -n1 | xargs -I{} dirname '{}')"
+        BOOTSTRAP_BIN="$(find . -maxdepth 4 -type f -name updater_bootstrap | head -n1)"
+        INSTALL_ROOT="$HOME/.config/discordcanary"
+
+        if [ -z "$BOOTSTRAP_BIN" ]; then
+          echo "Could not find Discord Canary bootstrap binary"
+          echo "Extracted tree:"
+          find . -maxdepth 5 -print
+          exit 1
+        fi
+
+        mkdir -p "$INSTALL_ROOT"
+        if ! APP_DIR="$("$BOOTSTRAP_BIN" --no-zenity "$INSTALL_ROOT" canary "https://updates.discord.com/")"; then
+          echo "Discord Canary bootstrap failed"
+          echo "Extracted tree:"
+          find . -maxdepth 5 -print
+          exit 1
+        fi
+
+        CANARY_DIR="$INSTALL_ROOT/$APP_DIR"
+        if [ ! -d "$CANARY_DIR" ]; then
+          CANARY_DIR="$(find "$INSTALL_ROOT" -maxdepth 1 -type d -name 'app-*' | sort | tail -n1)"
         fi
         RESOURCES_DIR="$(find "$CANARY_DIR" -type d -name resources 2>/dev/null | head -n1)"
 
         if [ -z "$CANARY_DIR" ] || [ -z "$RESOURCES_DIR" ]; then
-          echo "Could not find Discord Canary resources directory"
+          echo "Could not find installed Discord Canary resources directory"
+          echo "Install tree:"
+          find "$INSTALL_ROOT" -maxdepth 5 -print
           echo "Extracted tree:"
           find . -maxdepth 5 -print
           exit 1
@@ -121,21 +141,21 @@ jobs:
         cp app.asar "$RESOURCES_DIR/app.asar"
 
         # workaround https://github.com/electron/electron/issues/42510
-        sudo chown root "$CANARY_DIR/chrome-sandbox"
-        sudo chmod 4755 "$CANARY_DIR/chrome-sandbox"
+        if [ -f "$CANARY_DIR/chrome-sandbox" ]; then
+          sudo chown root "$CANARY_DIR/chrome-sandbox"
+          sudo chmod 4755 "$CANARY_DIR/chrome-sandbox"
+        fi
 
     - name: Check if Discord will startup
       run: |
-        CANARY_DIR="$(find . -maxdepth 3 -type d \( -name 'DiscordCanary' -o -name 'Discord Canary' -o -iname 'discord-canary*' \) | head -n1)"
-        if [ -z "$CANARY_DIR" ]; then
-          CANARY_DIR="$(find . -maxdepth 4 -type f \( -name 'DiscordCanary' -o -iname 'discord-canary*' \) -perm -111 | head -n1 | xargs -I{} dirname '{}')"
-        fi
+        INSTALL_ROOT="$HOME/.config/discordcanary"
+        CANARY_DIR="$(find "$INSTALL_ROOT" -maxdepth 1 -type d -name 'app-*' | sort | tail -n1)"
         CANARY_BIN="$(find "$CANARY_DIR" -maxdepth 2 -type f \( -name 'DiscordCanary' -o -iname 'discord-canary*' \) -perm -111 2>/dev/null | head -n1)"
 
         if [ -z "$CANARY_DIR" ] || [ -z "$CANARY_BIN" ]; then
-          echo "Could not find Discord Canary executable"
-          echo "Extracted tree:"
-          find . -maxdepth 5 -print
+          echo "Could not find installed Discord Canary executable"
+          echo "Install tree:"
+          find "$INSTALL_ROOT" -maxdepth 5 -print
           exit 1
         fi
 
