@@ -97,16 +97,42 @@ jobs:
         wget "https://discord.com/api/download/canary?platform=linux&format=tar.gz" -O discord.tar.gz
         tar xf discord.tar.gz
 
+        CANARY_DIR="$(find . -maxdepth 3 -type d \( -name 'DiscordCanary' -o -name 'Discord Canary' -o -iname 'discord-canary*' \) | head -n1)"
+        if [ -z "$CANARY_DIR" ]; then
+          CANARY_DIR="$(find . -maxdepth 4 -type f \( -name 'DiscordCanary' -o -iname 'discord-canary*' \) -perm -111 | head -n1 | xargs -I{} dirname '{}')"
+        fi
+        RESOURCES_DIR="$(find "$CANARY_DIR" -type d -name resources 2>/dev/null | head -n1)"
+
+        if [ -z "$CANARY_DIR" ] || [ -z "$RESOURCES_DIR" ]; then
+          echo "Could not find Discord Canary resources directory"
+          echo "Extracted tree:"
+          find . -maxdepth 5 -print
+          exit 1
+        fi
+
         sed -r -i "s/const config=require\('.\/config'\);/console.log\('ABRA'\);app.exit\(\);  /" app.asar
-        cp app.asar DiscordCanary/resources/app.asar
+        cp app.asar "$RESOURCES_DIR/app.asar"
 
         # workaround https://github.com/electron/electron/issues/42510
-        sudo chown root ./DiscordCanary/chrome-sandbox
-        sudo chmod 4755 ./DiscordCanary/chrome-sandbox
+        sudo chown root "$CANARY_DIR/chrome-sandbox"
+        sudo chmod 4755 "$CANARY_DIR/chrome-sandbox"
 
     - name: Check if Discord will startup
       run: |
-        xvfb-run -e /dev/stdout ./DiscordCanary/DiscordCanary --enable-logging | grep -m1 "ABRA"
+        CANARY_DIR="$(find . -maxdepth 3 -type d \( -name 'DiscordCanary' -o -name 'Discord Canary' -o -iname 'discord-canary*' \) | head -n1)"
+        if [ -z "$CANARY_DIR" ]; then
+          CANARY_DIR="$(find . -maxdepth 4 -type f \( -name 'DiscordCanary' -o -iname 'discord-canary*' \) -perm -111 | head -n1 | xargs -I{} dirname '{}')"
+        fi
+        CANARY_BIN="$(find "$CANARY_DIR" -maxdepth 2 -type f \( -name 'DiscordCanary' -o -iname 'discord-canary*' \) -perm -111 2>/dev/null | head -n1)"
+
+        if [ -z "$CANARY_DIR" ] || [ -z "$CANARY_BIN" ]; then
+          echo "Could not find Discord Canary executable"
+          echo "Extracted tree:"
+          find . -maxdepth 5 -print
+          exit 1
+        fi
+
+        xvfb-run -e /dev/stdout "$CANARY_BIN" --enable-logging | grep -m1 "ABRA"
       timeout-minutes: 3
 
   test-win-stable:
