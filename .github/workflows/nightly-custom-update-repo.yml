@@ -1,4 +1,4 @@
-name: Nightly Custom Update Repo
+name: Nightly Fork
 
 on:
   push:
