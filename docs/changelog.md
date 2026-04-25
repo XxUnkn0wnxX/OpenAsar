@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-04-26
+
+### Linux Canary workflow follow-up
+
+- Investigated the failing Linux Canary GitHub Actions jobs on the fork after the workflow was updated to detect the extracted directory dynamically.
+- Confirmed the current Linux Canary tarball is no longer a full app bundle and instead only contains the bootstrap package with `updater_bootstrap`, `discord-canary`, and related wrapper files.
+- Verified locally that Linux stable still ships a full `Discord/resources/app.asar` layout, which explains why the stable workflow kept passing while Canary broke.
+- Reworked the Linux Canary setup steps in all three workflow variants so CI now treats the Canary tarball as a bootstrap installer instead of a ready-to-patch app bundle.
+- Added bootstrap-based Canary installation in CI by running `updater_bootstrap --no-zenity` into `~/.config/discordcanary`, then locating the installed `app-*` directory before copying `app.asar`.
+- Updated the Linux Canary startup smoke tests to launch the installed `DiscordCanary` binary from the bootstrapped app directory instead of assuming the executable lives in the extracted tarball.
+- Kept extra extracted-tree and install-tree debug output so future Linux Canary packaging changes are easier to diagnose from workflow logs.
+
 ## 2026-04-23
 
 ### Sidebar follow-up
