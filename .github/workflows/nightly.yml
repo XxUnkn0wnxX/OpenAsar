@@ -70,7 +70,24 @@ jobs:
 
     - name: Check if Discord will startup
       run: |
-        xvfb-run -e /dev/stdout ./Discord/Discord --enable-logging | grep -m1 "ABRA"
+        LOG_FILE="$(mktemp)"
+        xvfb-run -e /dev/stdout ./Discord/Discord --enable-logging >"$LOG_FILE" 2>&1 &
+        DISCORD_PID=$!
+
+        cleanup() {
+          kill "$DISCORD_PID" 2>/dev/null || true
+          wait "$DISCORD_PID" 2>/dev/null || true
+          rm -f "$LOG_FILE"
+        }
+        trap cleanup EXIT
+
+        if ! timeout 60s bash -c 'while ! grep -m1 "ABRA" "$1" >/dev/null 2>&1; do sleep 1; done' _ "$LOG_FILE"; then
+          echo "Discord stable did not emit ABRA before timeout"
+          cat "$LOG_FILE"
+          exit 1
+        fi
+
+        grep -m1 "ABRA" "$LOG_FILE"
       timeout-minutes: 3
 
   test-linux-canary:
@@ -152,7 +169,24 @@ jobs:
           exit 1
         fi
 
-        xvfb-run -e /dev/stdout "$CANARY_BIN" --enable-logging | grep -m1 "ABRA"
+        LOG_FILE="$(mktemp)"
+        xvfb-run -e /dev/stdout "$CANARY_BIN" --enable-logging >"$LOG_FILE" 2>&1 &
+        DISCORD_PID=$!
+
+        cleanup() {
+          kill "$DISCORD_PID" 2>/dev/null || true
+          wait "$DISCORD_PID" 2>/dev/null || true
+          rm -f "$LOG_FILE"
+        }
+        trap cleanup EXIT
+
+        if ! timeout 60s bash -c 'while ! grep -m1 "ABRA" "$1" >/dev/null 2>&1; do sleep 1; done' _ "$LOG_FILE"; then
+          echo "Discord Canary did not emit ABRA before timeout"
+          cat "$LOG_FILE"
+          exit 1
+        fi
+
+        grep -m1 "ABRA" "$LOG_FILE"
       timeout-minutes: 3
 
   test-win-stable:

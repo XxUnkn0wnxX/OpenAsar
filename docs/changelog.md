@@ -2,6 +2,13 @@
 
 ## 2026-04-26
 
+### Canary workflow timeout follow-up
+
+- Investigated a failing `Nightly Fork` GitHub Actions run where `Test Linux Canary` printed `ABRA` successfully but still timed out in the startup check step.
+- Confirmed the failure was not a cold-start regression in OpenAsar itself; the CI check was hanging behind `xvfb-run` after the expected startup marker had already been emitted.
+- Reworked the Linux startup smoke-test steps in all three workflow variants so Discord is launched in the background, the logs are polled for `ABRA`, and the process is cleaned up explicitly once the success marker is observed.
+- Kept the existing 3-minute job timeout while adding a shorter inner timeout for the log poll, so future hangs fail quickly with the captured client output.
+
 ### Sidebar cold-start follow-up
 
 - Reduced the BetterDiscord sidebar fix in `src/mainWindow.js` so it stays much closer to upstream's original interval-based settings injection flow.
