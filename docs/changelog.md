@@ -2,6 +2,14 @@
 
 ## 2026-04-26
 
+### Sidebar cold-start follow-up
+
+- Reduced the BetterDiscord sidebar fix in `src/mainWindow.js` so it stays much closer to upstream's original interval-based settings injection flow.
+- Kept only the minimum behavior needed for cold-start reliability: the OpenAsar sidebar entry now retries independently from the footer/version injection path.
+- Kept the OpenAsar entry anchored in the `App Settings` section when that section is present, with the older `Advanced` fallbacks still available for Discord layouts that need them.
+- Kept the custom goose icon on the cloned OpenAsar settings item.
+- Verified the trimmed DOM-only path with a fresh no-auto-update local build and confirmed the OpenAsar entry now survives a cold boot with BetterDiscord enabled.
+
 ### Linux Canary workflow follow-up
 
 - Investigated the failing Linux Canary GitHub Actions jobs on the fork after the workflow was updated to detect the extracted directory dynamically.
