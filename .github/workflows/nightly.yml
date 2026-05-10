@@ -61,17 +61,63 @@ jobs:
         wget "https://discord.com/api/download/stable?platform=linux&format=tar.gz" -O discord.tar.gz
         tar xf discord.tar.gz
 
+        BOOTSTRAP_BIN="$(find . -maxdepth 4 -type f -name updater_bootstrap | head -n1)"
+        INSTALL_ROOT="$HOME/.config/discord"
+
+        if [ -z "$BOOTSTRAP_BIN" ]; then
+          echo "Could not find Discord stable bootstrap binary"
+          echo "Extracted tree:"
+          find . -maxdepth 5 -print
+          exit 1
+        fi
+
+        mkdir -p "$INSTALL_ROOT"
+        if ! APP_DIR="$("$BOOTSTRAP_BIN" --no-zenity "$INSTALL_ROOT" stable "https://updates.discord.com/")"; then
+          echo "Discord stable bootstrap failed"
+          echo "Extracted tree:"
+          find . -maxdepth 5 -print
+          exit 1
+        fi
+
+        STABLE_DIR="$INSTALL_ROOT/$APP_DIR"
+        if [ ! -d "$STABLE_DIR" ]; then
+          STABLE_DIR="$(find "$INSTALL_ROOT" -maxdepth 1 -type d -name 'app-*' | sort | tail -n1)"
+        fi
+        RESOURCES_DIR="$(find "$STABLE_DIR" -type d -name resources 2>/dev/null | head -n1)"
+
+        if [ -z "$STABLE_DIR" ] || [ -z "$RESOURCES_DIR" ]; then
+          echo "Could not find installed Discord stable resources directory"
+          echo "Install tree:"
+          find "$INSTALL_ROOT" -maxdepth 5 -print
+          echo "Extracted tree:"
+          find . -maxdepth 5 -print
+          exit 1
+        fi
+
         sed -r -i "s/const config=require\('.\/config'\);/console.log\('ABRA'\);app.exit\(\);  /" app.asar
-        cp app.asar Discord/resources/app.asar
+        cp app.asar "$RESOURCES_DIR/app.asar"
 
         # workaround https://github.com/electron/electron/issues/42510
-        sudo chown root ./Discord/chrome-sandbox
-        sudo chmod 4755 ./Discord/chrome-sandbox
+        if [ -f "$STABLE_DIR/chrome-sandbox" ]; then
+          sudo chown root "$STABLE_DIR/chrome-sandbox"
+          sudo chmod 4755 "$STABLE_DIR/chrome-sandbox"
+        fi
 
     - name: Check if Discord will startup
       run: |
+        INSTALL_ROOT="$HOME/.config/discord"
+        STABLE_DIR="$(find "$INSTALL_ROOT" -maxdepth 1 -type d -name 'app-*' | sort | tail -n1)"
+        STABLE_BIN="$(find "$STABLE_DIR" -maxdepth 2 -type f \( -name 'Discord' -o -name 'discord' -o -iname 'discord*' \) -perm -111 2>/dev/null | head -n1)"
+
+        if [ -z "$STABLE_DIR" ] || [ -z "$STABLE_BIN" ]; then
+          echo "Could not find installed Discord stable executable"
+          echo "Install tree:"
+          find "$INSTALL_ROOT" -maxdepth 5 -print
+          exit 1
+        fi
+
         LOG_FILE="$(mktemp)"
-        xvfb-run -e /dev/stdout ./Discord/Discord --enable-logging >"$LOG_FILE" 2>&1 &
+        xvfb-run -e /dev/stdout "$STABLE_BIN" --enable-logging >"$LOG_FILE" 2>&1 &
         DISCORD_PID=$!
 
         cleanup() {
