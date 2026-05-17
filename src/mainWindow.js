@@ -27,11 +27,45 @@ const themesync = async () => {
 
 // Settings injection
 const openOpenAsarSettings = () => DiscordNative.ipc.send('DISCORD_UPDATED_QUOTES', 'o');
-const findVersionInfo = () =>
-  document.querySelector('.bd-version-info > div:nth-child(2)') ??
-  document.querySelector('.bd-version-info') ??
-  document.querySelector('[class*="sidebar"] [class*="compactInfo"]') ??
-  [...document.querySelectorAll('[class*="sidebar"] [class*="info"] [class*="line"]')].find(x => x.textContent?.startsWith('Host '));
+const normalizeText = text => text?.replace(/\s+/g, ' ').trim() ?? '';
+const releaseChannel = (window.GLOBAL_ENV?.RELEASE_CHANNEL ?? '').toLowerCase();
+const nativeVersionPattern = /\b\d+\.\d+\.\d+\b/;
+const nativeBuildPattern = /\b\d{5,6}\b/;
+const nativeChannelPattern = /\b(?:stable|ptb|canary|development)\b/;
+
+const isNativeVersionInfo = text => {
+  const normalized = normalizeText(text).toLowerCase();
+  if (!normalized || !nativeVersionPattern.test(normalized)) return false;
+
+  const hasChannel = releaseChannel ? normalized.includes(releaseChannel) : nativeChannelPattern.test(normalized);
+  const hasBuild = nativeBuildPattern.test(normalized) || normalized.includes('build override');
+  return hasChannel || hasBuild;
+};
+
+const isHostLine = text => normalizeText(text).startsWith('Host ');
+const isBetterDiscordVersionLine = text => {
+  const normalized = normalizeText(text);
+  if (!normalized) return false;
+
+  return isHostLine(normalized) ||
+    normalized.startsWith('BD ') ||
+    /^stable \d+/i.test(normalized) ||
+    /^ptb \d+/i.test(normalized) ||
+    /^canary \d+/i.test(normalized);
+};
+
+const findVersionInfo = () => {
+  const compactInfo = [...document.querySelectorAll('[class*="sidebar"] [class*="compactInfo"]')].find(x => isNativeVersionInfo(x.textContent));
+  if (compactInfo) return compactInfo;
+
+  const sidebarLine = [...document.querySelectorAll('[class*="sidebar"] [class*="info"] [class*="line"]')].find(x => isNativeVersionInfo(x.textContent) || isHostLine(x.textContent));
+  if (sidebarLine) return sidebarLine;
+
+  const bdVersionLine = [...document.querySelectorAll('.bd-version-info > *')].find(x => isBetterDiscordVersionLine(x.textContent));
+  if (bdVersionLine) return bdVersionLine;
+
+  return document.querySelector('.bd-version-info');
+};
 
 const findAppSettingsItem = () => {
   const sidebar = document.querySelector('[data-list-id="settings-sidebar"]') ?? document.querySelector('[class*="sidebar"] [class*="nav"]');
