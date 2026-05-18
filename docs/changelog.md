@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-05-17
+
+### BetterDiscord version detection follow-up
+
+- Hardened the OpenAsar version-entry injection in `src/mainWindow.js` so it identifies the real native Discord version row by content instead of relying on selector order alone.
+- Added content-based matching for native compact version rows and older Host-line layouts so the footer injection stays compatible with plain Discord, upstream BetterDiscord, and the local BetterDiscord fork.
+- Kept the BetterDiscord-specific `.bd-version-info` fallbacks only after native Discord targets are checked, which avoids attaching OpenAsar to BetterDiscord-owned version rows when both layouts are present.
+- Ignored `local-build-no-autoupdate.zsh` in `.gitignore` so the local no-auto-update helper stays repo-local during testing.
+
+## 2026-05-11
+
+### Linux stable workflow follow-up
+
+- Investigated the Linux stable GitHub Actions smoke tests after the previous Canary bootstrap fix and confirmed the current stable tarball now also behaves like a bootstrap package instead of a ready-to-patch app tree.
+- Reworked the Linux stable setup steps in all three workflow variants so CI runs `updater_bootstrap --no-zenity`, locates the installed `app-*` directory, and copies `app.asar` into the discovered resources directory instead of assuming `Discord/resources/app.asar` already exists.
+- Updated the Linux stable startup smoke tests to discover the installed Discord executable from the bootstrapped install tree before launching it under `xvfb-run`.
+- Kept the added install-tree and extracted-tree failure output so future Linux stable packaging changes are easier to diagnose from workflow logs.
+
+### Upstream merge follow-up
+
+- Merged the latest `upstream/main` changes into `develop`.
+- Picked up the upstream splash updater change that sets `skip_host_delta` back to `true` during retry handling in `src/splash/index.js`.
+
 ## 2026-04-26
 
 ### Canary workflow timeout follow-up
