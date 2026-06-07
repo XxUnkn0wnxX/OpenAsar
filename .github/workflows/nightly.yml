@@ -3,7 +3,7 @@ name: Nightly
 on:
   workflow_dispatch:
   # push:
-  #   branches: [ main ]
+  #   branches: [ develop ]
   #   paths:
   #   - 'src/**'
   #   - 'scripts/**'

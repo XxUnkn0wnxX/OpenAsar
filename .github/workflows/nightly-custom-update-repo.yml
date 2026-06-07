@@ -2,7 +2,7 @@ name: Nightly Fork
 
 on:
   push:
-    branches: [ main ]
+    branches: [ develop ]
     paths:
     - 'src/**'
     - 'scripts/**'
