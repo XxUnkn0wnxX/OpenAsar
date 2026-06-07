@@ -29,7 +29,8 @@ exports.init = () => {
   }
   rootPath = process.platform === 'darwin' ? userData : installPath;
 
-  moduleData = buildInfo.newUpdater ? join(userData, 'module_data') : join(userDataVersioned, 'modules');
+  moduleData = buildInfo.localModulesRoot != null ? buildInfo.localModulesRoot :
+    (buildInfo.newUpdater ? join(userData, 'module_data') : join(userDataVersioned, 'modules'));
   resourcesPath = join(process.resourcesPath);
   logPath = join(userData, 'logs');
   assetCachePath = join(userData, 'discord_asset_cache');
