@@ -71,6 +71,13 @@ const findAppSettingsItem = () => {
   const sidebar = document.querySelector('[data-list-id="settings-sidebar"]') ?? document.querySelector('[class*="sidebar"] [class*="nav"]');
   if (!sidebar) return;
 
+  const languageTime = (
+    sidebar.querySelector('[data-settings-sidebar-item="language_and_time_panel"]') ??
+    sidebar.querySelector('[data-list-item-id="settings-sidebar___language_and_time_panel"]')?.closest('[data-settings-sidebar-item], li, [class*="itemContainer"]') ??
+    sidebar.querySelector('[data-list-item-id="settings-sidebar___language_and_time_sidebar_item"]')?.closest('[data-settings-sidebar-item], li, [class*="itemContainer"]')
+  );
+  if (languageTime) return languageTime;
+
   const sections = [...sidebar.querySelectorAll('ul, [class*="section"]')];
   const appSection = (
     sidebar.querySelector('ul[aria-label="App Settings"]') ??
@@ -120,8 +127,11 @@ const injectSettingsItem = () => {
 
   const oaSetting = advanced.cloneNode(true);
   const text = oaSetting.querySelector('[class*="text"]');
+  const item = oaSetting.matches?.('[data-list-item-id^="settings-sidebar___"]') ? oaSetting : oaSetting.querySelector('[data-list-item-id^="settings-sidebar___"]');
 
   oaSetting.id = 'openasar-item';
+  oaSetting.setAttribute('data-settings-sidebar-item', 'openasar_panel');
+  if (item) item.setAttribute('data-list-item-id', 'settings-sidebar___openasar_sidebar_item');
   if (text) text.textContent = 'OpenAsar';
   oaSetting.onclick = openOpenAsarSettings;
   oaSetting.querySelector('svg')?.replaceChildren();

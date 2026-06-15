@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-15
+
+### Sidebar compatibility follow-up
+
+- Updated the OpenAsar settings sidebar injection in `src/mainWindow.js` so it prefers Discord's current `language_and_time_panel` row before falling back to the older `App Settings` / `Advanced` anchors.
+- Kept the existing DOM-clone approach and footer version entry behavior intact while supporting both the newer `_panel` sidebar IDs and the older `_sidebar_item` IDs.
+
 ## 2026-05-17
 
 ### BetterDiscord version detection follow-up
