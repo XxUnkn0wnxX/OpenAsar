@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-04
+
+### macOS ShipIt bootstrap follow-up
+
+- Reworked macOS host-update retention so OpenAsar no longer copies itself into Discord's staged `app-*` host bundle before ShipIt finishes the handoff.
+- Added a temporary `openasar-bootstrap/` helper under the Discord channel's App Support folder; it disables ShipIt's auto relaunch, waits for the real ShipIt process when present, patches the final `/Applications` app bundle, and relaunches Discord.
+- Treated leftover `ShipIt_request.json` as metadata only, so stale request files do not block direct patching when no active ShipIt process appears.
+- Added fresh per-run summary and verbose console logs for the bootstrap helper.
+
 ## 2026-06-15
 
 ### Sidebar compatibility follow-up
