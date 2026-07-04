@@ -182,6 +182,7 @@ class Updater extends require('events').EventEmitter {
     const statePath = join(bootstrapDir, 'post-shipit-state.json');
     const logPath = join(bootstrapDir, 'post-shipit-helper.log');
     const consoleLogPath = join(bootstrapDir, 'post-shipit-console.log');
+    const pidPath = join(bootstrapDir, 'post-shipit-helper.pid');
     const targetAppPath = this._getCurrentMacOSAppPath();
     const currentAsar = join(require.main.filename, '..');
 
@@ -192,13 +193,14 @@ class Updater extends require('events').EventEmitter {
       'openasar-post-shipit-helper.zsh',
       'openasar-post-shipit-state.json',
       'openasar-post-shipit-helper.log',
-      'openasar-post-shipit-console.log'
+      'openasar-post-shipit-console.log',
+      'openasar-post-shipit-helper.pid'
     ]) {
       try {
         ofs.unlinkSync(join(userData, file));
       } catch (_) {}
     }
-    for (const file of [ logPath, consoleLogPath ]) {
+    for (const file of [ logPath, consoleLogPath, pidPath ]) {
       try {
         ofs.writeFileSync(file, '');
       } catch (_) {}
@@ -215,7 +217,8 @@ class Updater extends require('events').EventEmitter {
       targetAppPath,
       helperPath,
       logPath,
-      consoleLogPath
+      consoleLogPath,
+      pidPath
     }));
     ofs.chmodSync(helperPath, 0o755);
 
@@ -227,7 +230,8 @@ class Updater extends require('events').EventEmitter {
       next,
       targetAppPath ?? '',
       logPath,
-      consoleLogPath
+      consoleLogPath,
+      pidPath
     ], {
       detached: true,
       stdio: 'ignore'
@@ -466,9 +470,12 @@ staged_app_path="$3"
 target_app_path="$4"
 log_path="$5"
 console_log_path="$6"
+pid_path="$7"
 bundle_id=""
 saw_shipit=0
 
+/bin/mkdir -p "$(/usr/bin/dirname "$pid_path")" 2>/dev/null || true
+print -r -- "$$" > "$pid_path" 2>/dev/null || true
 /bin/mkdir -p "$(/usr/bin/dirname "$console_log_path")" 2>/dev/null || true
 exec >> "$console_log_path" 2>&1
 PS4='+openasar-bootstrap:%D{%Y-%m-%d %H:%M:%S %Z}:%N:%i: '
@@ -494,7 +501,7 @@ file_url_to_path() {
 
   [[ -n "$value" ]] || return 1
   value="\${value#file://}"
-  value="\${value//%20/ }"
+  value="$(print -r -- "$value" | /usr/bin/perl -pe 's/%([0-9A-Fa-f]{2})/chr(hex($1))/eg')"
   print -r -- "$value"
 }
 
