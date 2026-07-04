@@ -474,8 +474,16 @@ pid_path="$7"
 bundle_id=""
 saw_shipit=0
 
+cleanup_pid_file() {
+  /bin/rm -f "$pid_path" 2>/dev/null || true
+}
+
 /bin/mkdir -p "$(/usr/bin/dirname "$pid_path")" 2>/dev/null || true
 print -r -- "$$" > "$pid_path" 2>/dev/null || true
+trap cleanup_pid_file EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 /bin/mkdir -p "$(/usr/bin/dirname "$console_log_path")" 2>/dev/null || true
 exec >> "$console_log_path" 2>&1
 PS4='+openasar-bootstrap:%D{%Y-%m-%d %H:%M:%S %Z}:%N:%i: '
