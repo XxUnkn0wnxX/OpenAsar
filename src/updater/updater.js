@@ -510,6 +510,7 @@ file_url_to_path() {
   [[ -n "$value" ]] || return 1
   value="\${value#file://}"
   value="$(print -r -- "$value" | /usr/bin/perl -pe 's/%([0-9A-Fa-f]{2})/chr(hex($1))/eg')"
+  value="\${value%/}"
   print -r -- "$value"
 }
 
@@ -618,8 +619,77 @@ copy_openasar_into_target() {
   log "Restored OpenAsar into final app $final_asar"
 }
 
+app_executable_path() {
+  local info_plist="$target_app_path/Contents/Info.plist"
+  local executable_name
+  local app_name
+
+  executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$info_plist" 2>/dev/null || true)"
+  if [[ -z "$executable_name" ]]; then
+    app_name="$(/usr/bin/basename "$target_app_path" .app 2>/dev/null || true)"
+    executable_name="$app_name"
+  fi
+
+  [[ -n "$executable_name" ]] || return 1
+  print -r -- "$target_app_path/Contents/MacOS/$executable_name"
+}
+
+wait_for_app_bundle_ready() {
+  local deadline="$((SECONDS + 20))"
+  local executable_path=""
+
+  while (( SECONDS < deadline )); do
+    executable_path="$(app_executable_path || true)"
+    if [[ -d "$target_app_path" && -f "$target_app_path/Contents/Info.plist" && -n "$executable_path" && -x "$executable_path" ]]; then
+      return 0
+    fi
+
+    sleep 0.5
+  done
+
+  log "Final app bundle executable was not ready at $executable_path"
+  return 1
+}
+
+refresh_target_launch_services_registration() {
+  local lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
+  [[ -d "$target_app_path" ]] || return 0
+  [[ -x "$lsregister" ]] || return 0
+  "$lsregister" -f "$target_app_path" >/dev/null 2>&1 || true
+}
+
 relaunch_target() {
-  /usr/bin/open "$target_app_path" 2>> "$log_path" && log "Relaunched Discord $target_app_path" || log "Failed to relaunch Discord $target_app_path"
+  local attempt
+  local open_output
+  local executable_path
+
+  wait_for_app_bundle_ready || return 1
+
+  for attempt in 1 2 3; do
+    refresh_target_launch_services_registration
+    if open_output="$(/usr/bin/open "$target_app_path" 2>&1)"; then
+      log "Relaunched Discord $target_app_path"
+      return 0
+    fi
+
+    if [[ -n "$open_output" ]]; then
+      log "open attempt $attempt failed for $target_app_path: $open_output"
+    else
+      log "open attempt $attempt failed for $target_app_path"
+    fi
+    sleep 1
+  done
+
+  executable_path="$(app_executable_path || true)"
+  if [[ -n "$executable_path" && -x "$executable_path" ]]; then
+    log "Falling back to direct executable launch $executable_path"
+    "$executable_path" >/dev/null 2>&1 &!
+    return 0
+  fi
+
+  log "Failed to relaunch Discord $target_app_path"
+  return 1
 }
 
 log "Post-ShipIt helper started; staged=$staged_app_path target=$target_app_path"
