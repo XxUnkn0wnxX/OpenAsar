@@ -38,6 +38,7 @@ class Updater extends require('events').EventEmitter {
     this.updateEventHistory = [];
     this.currentlyDownloading = {};
     this.currentlyInstalling = {};
+    this.installedHostThisSession = false;
     this.hasEmittedUnhandledException = false;
 
     this.nativeUpdater = new Native.Updater({
@@ -115,7 +116,10 @@ class Updater extends require('events').EventEmitter {
 
         request.progressCallback?.(progress);
 
-        if (progress.task['HostInstall'] != null && progress.state === TASK_STATE_COMPLETE) this.emit('host-updated');
+        if (progress.task['HostInstall'] != null && progress.state === TASK_STATE_COMPLETE) {
+          this.installedHostThisSession = true;
+          this.emit('host-updated');
+        }
       } else log('Updater', id, detail); // Unknown response
     } catch (e) {
       log('Updater', e); // Error handling response
@@ -159,30 +163,109 @@ class Updater extends require('events').EventEmitter {
     }));
   }
 
+  _getCurrentMacOSAppPath() {
+    const parts = process.execPath.split('/');
+
+    for (let i = parts.length - 1; i >= 0; i--) {
+      if (parts[i].endsWith('.app')) return parts.slice(0, i + 1).join('/');
+    }
+
+    return null;
+  }
+
+  _prepareMacOSPostShipItHelper(next) {
+    const ofs = require('original-fs');
+    const userData = paths.getUserData();
+    const bootstrapDir = join(userData, 'openasar-bootstrap');
+    const helperPath = join(bootstrapDir, 'post-shipit-helper.zsh');
+    const payloadPath = join(bootstrapDir, 'app.asar');
+    const statePath = join(bootstrapDir, 'post-shipit-state.json');
+    const logPath = join(bootstrapDir, 'post-shipit-helper.log');
+    const consoleLogPath = join(bootstrapDir, 'post-shipit-console.log');
+    const targetAppPath = this._getCurrentMacOSAppPath();
+    const currentAsar = join(require.main.filename, '..');
+
+    ofs.mkdirSync(bootstrapDir, { recursive: true });
+    for (const file of [
+      'openasar-bootstrap-app.asar',
+      'openasar-post-shipit-helper.js',
+      'openasar-post-shipit-helper.zsh',
+      'openasar-post-shipit-state.json',
+      'openasar-post-shipit-helper.log',
+      'openasar-post-shipit-console.log'
+    ]) {
+      try {
+        ofs.unlinkSync(join(userData, file));
+      } catch (_) {}
+    }
+    for (const file of [ logPath, consoleLogPath ]) {
+      try {
+        ofs.writeFileSync(file, '');
+      } catch (_) {}
+    }
+
+    ofs.copyFileSync(currentAsar, payloadPath);
+
+    ofs.writeFileSync(helperPath, MACOS_POST_SHIPIT_HELPER);
+    ofs.writeFileSync(statePath, JSON.stringify({
+      bootstrapDir,
+      payloadPath,
+      requestPath: join(userData, 'ShipIt_request.json'),
+      stagedAppPath: next,
+      targetAppPath,
+      helperPath,
+      logPath,
+      consoleLogPath
+    }));
+    ofs.chmodSync(helperPath, 0o755);
+
+    const child = spawn('/usr/bin/env', [
+      'zsh',
+      helperPath,
+      payloadPath,
+      join(userData, 'ShipIt_request.json'),
+      next,
+      targetAppPath ?? '',
+      logPath,
+      consoleLogPath
+    ], {
+      detached: true,
+      stdio: 'ignore'
+    });
+
+    child.unref();
+  }
+
   _startCurrentVersionInner(options, versions) {
     if (this.committedHostVersion == null) this.committedHostVersion = versions.current_host;
 
     const next = resolve(this._getHostExePath());
-    if ((process.platform === 'darwin' ?
-      (currentVersion !== this.committedHostVersion.join('.')) :
-      (next !== resolve(process.execPath))
-    ) && !options?.allowObsoleteHost) {
+    const isMacOS = process.platform === 'darwin';
+    const hostIsObsolete = isMacOS ? currentVersion !== this.committedHostVersion.join('.') : next !== resolve(process.execPath);
+    const shouldCommitMacOSHost = isMacOS && this.installedHostThisSession;
+
+    if ((hostIsObsolete || shouldCommitMacOSHost) && !options?.allowObsoleteHost) {
       // Retain OpenAsar
       const fs = require('original-fs');
 
       const cAsar = join(require.main.filename, '..');
-      const nAsar = process.platform === 'darwin' ? join(next, 'Contents', 'Resources', 'app.asar') : join(next, '..', 'resources', 'app.asar');
+      const nAsar = isMacOS ? null : join(next, '..', 'resources', 'app.asar');
 
-      try {
-        fs.copyFileSync(nAsar, nAsar + '.backup'); // Copy new app.asar to backup file (<new>/app.asar -> <new>/app.asar.backup)
-        fs.copyFileSync(cAsar, nAsar); // Copy old app.asar to new app.asar (<old>/app.asar -> <new>/app.asar)
-      } catch (e) {
-        log('Updater', 'Failed to retain OpenAsar', e);
-      }
-
-      if (process.platform === 'darwin') {
+      if (isMacOS) {
+        try {
+          this._prepareMacOSPostShipItHelper(next);
+        } catch (e) {
+          log('Updater', 'Failed to prepare post-ShipIt OpenAsar retention', e);
+        }
         this._updateMacOSHostVersion(next);
       } else {
+        try {
+          fs.copyFileSync(nAsar, nAsar + '.backup'); // Copy new app.asar to backup file (<new>/app.asar -> <new>/app.asar.backup)
+          fs.copyFileSync(cAsar, nAsar); // Copy old app.asar to new app.asar (<old>/app.asar -> <new>/app.asar)
+        } catch (e) {
+          log('Updater', 'Failed to retain OpenAsar', e);
+        }
+
         app.once('will-quit', () => spawn(next, [], {
           detached: true,
           stdio: 'inherit'
@@ -373,6 +456,195 @@ class Updater extends require('events').EventEmitter {
     return this.nativeUpdater.create_shortcut(options);
   }
 }
+
+const MACOS_POST_SHIPIT_HELPER = `#!/usr/bin/env zsh
+set -u
+
+payload_path="$1"
+request_path="$2"
+staged_app_path="$3"
+target_app_path="$4"
+log_path="$5"
+console_log_path="$6"
+bundle_id=""
+saw_shipit=0
+
+/bin/mkdir -p "$(/usr/bin/dirname "$console_log_path")" 2>/dev/null || true
+exec >> "$console_log_path" 2>&1
+PS4='+openasar-bootstrap:%D{%Y-%m-%d %H:%M:%S %Z}:%N:%i: '
+set -x
+
+log() {
+  /bin/mkdir -p "$(/usr/bin/dirname "$log_path")" 2>/dev/null || true
+  local message="[$(/bin/date '+%Y-%m-%d %H:%M:%S %Z')] $*"
+  print -r -- "$message" >> "$log_path" 2>/dev/null || true
+  print -r -- "$message"
+}
+
+json_string_value() {
+  local key="$1"
+  local file="$2"
+
+  [[ -f "$file" ]] || return 1
+  OPENASAR_JSON_KEY="$key" /usr/bin/perl -0ne 'BEGIN { $key = quotemeta $ENV{"OPENASAR_JSON_KEY"}; } print $1 if /"$key"\\s*:\\s*"([^"]*)"/' "$file" 2>/dev/null
+}
+
+file_url_to_path() {
+  local value="$1"
+
+  [[ -n "$value" ]] || return 1
+  value="\${value#file://}"
+  value="\${value//%20/ }"
+  print -r -- "$value"
+}
+
+patch_shipit_request() {
+  [[ -f "$request_path" ]] || return 1
+
+  /usr/bin/grep -Eq '"launchAfterInstallation"[[:space:]]*:[[:space:]]*true' "$request_path" 2>/dev/null || return 0
+  /usr/bin/perl -0pi -e 's/"launchAfterInstallation"\\s*:\\s*true/"launchAfterInstallation":false/g' "$request_path" 2>> "$log_path" \
+    && log "Disabled ShipIt launchAfterInstallation" \
+    || log "Failed to patch ShipIt launchAfterInstallation"
+}
+
+refresh_shipit_state() {
+  local target_url
+  local detected_bundle_id
+
+  [[ -f "$request_path" ]] || return 1
+  patch_shipit_request
+
+  target_url="$(json_string_value targetBundleURL "$request_path")"
+  detected_bundle_id="$(json_string_value bundleIdentifier "$request_path")"
+
+  [[ -n "$detected_bundle_id" ]] && bundle_id="$detected_bundle_id"
+  [[ -n "$target_url" ]] && target_app_path="$(file_url_to_path "$target_url")"
+}
+
+shipit_running() {
+  local output
+
+  output="$(/bin/ps -axo command= 2>/dev/null | /usr/bin/grep -F 'Squirrel.framework' | /usr/bin/grep -F 'ShipIt' | /usr/bin/grep -v '/usr/bin/grep' || true)"
+  [[ -n "$output" ]] || return 1
+
+  if [[ -z "$bundle_id" ]]; then
+    return 0
+  fi
+
+  print -r -- "$output" | /usr/bin/grep -F "$bundle_id" >/dev/null 2>&1 && return 0
+  print -r -- "$output" | /usr/bin/grep -F "$request_path" >/dev/null 2>&1 && return 0
+  return 1
+}
+
+kill_discord_from_target() {
+  local signal="$1"
+  local final_exe_dir
+  local pids
+  local pid
+
+  [[ -n "$target_app_path" ]] || return 0
+  final_exe_dir="$target_app_path/Contents/MacOS"
+  pids="$(/usr/bin/pgrep -f "$final_exe_dir" 2>/dev/null || true)"
+
+  print -r -- "$pids" | while IFS= read -r pid; do
+    [[ -n "$pid" ]] || continue
+    [[ "$pid" = "$$" ]] && continue
+    /bin/kill "-$signal" "$pid" 2>> "$log_path" && log "Sent $signal to early Discord launch pid $pid" || true
+  done
+}
+
+wait_for_stable_asar() {
+  local final_asar="$1"
+  local deadline="$((SECONDS + 120))"
+  local stable_ticks=0
+  local last_size=""
+  local size
+
+  while (( stable_ticks < 3 && SECONDS < deadline )); do
+    if [[ ! -f "$final_asar" ]]; then
+      stable_ticks=0
+      sleep 0.25
+      continue
+    fi
+
+    size="$(/usr/bin/stat -f%z "$final_asar" 2>/dev/null || true)"
+    if [[ -n "$size" && "$size" != "0" && "$size" = "$last_size" ]]; then
+      stable_ticks="$((stable_ticks + 1))"
+    else
+      stable_ticks=0
+    fi
+
+    last_size="$size"
+    sleep 0.25
+  done
+
+  [[ -f "$final_asar" ]]
+}
+
+copy_openasar_into_target() {
+  local final_asar="$target_app_path/Contents/Resources/app.asar"
+
+  wait_for_stable_asar "$final_asar" || {
+    log "Final app.asar never became available at $final_asar"
+    return 1
+  }
+
+  if [[ "$saw_shipit" = "1" || ! -f "$final_asar.backup" ]]; then
+    /bin/cp -f "$final_asar" "$final_asar.backup" 2>> "$log_path" || log "Failed to back up final stock app.asar"
+  else
+    log "Preserved existing app.asar.backup during direct patch"
+  fi
+
+  /bin/cp -f "$payload_path" "$final_asar" 2>> "$log_path" || {
+    log "Failed to copy OpenAsar payload into $final_asar"
+    return 1
+  }
+
+  log "Restored OpenAsar into final app $final_asar"
+}
+
+relaunch_target() {
+  /usr/bin/open "$target_app_path" 2>> "$log_path" && log "Relaunched Discord $target_app_path" || log "Failed to relaunch Discord $target_app_path"
+}
+
+log "Post-ShipIt helper started; staged=$staged_app_path target=$target_app_path"
+
+deadline="$((SECONDS + 120))"
+no_shipit_deadline="$((SECONDS + 5))"
+while (( SECONDS < deadline )); do
+  refresh_shipit_state || true
+
+  if shipit_running; then
+    saw_shipit=1
+  elif [[ "$saw_shipit" = "1" && -n "$target_app_path" && -f "$target_app_path/Contents/Resources/app.asar" ]]; then
+    break
+  elif (( SECONDS >= no_shipit_deadline )) && [[ -n "$target_app_path" && -f "$target_app_path/Contents/Resources/app.asar" ]]; then
+    log "ShipIt did not appear during startup grace; patching target directly"
+    break
+  fi
+
+  sleep 0.25
+done
+
+if [[ "$saw_shipit" != "1" ]]; then
+  log "ShipIt did not appear before timeout; attempting final patch anyway"
+fi
+
+if [[ -z "$target_app_path" ]]; then
+  log "Unable to determine target Discord.app path"
+  exit 1
+fi
+
+kill_discord_from_target TERM
+sleep 1.5
+kill_discord_from_target KILL
+
+copy_openasar_into_target || exit 1
+relaunch_target
+/bin/rm -f "$payload_path" 2>> "$log_path" || true
+
+log "Post-ShipIt helper complete"
+`;
 
 const getCurrentArch = () => {
   if (process.platform === 'win32') {
