@@ -9,6 +9,22 @@ const restart = () => {
   app.exit(0);
 };
 
+const backendOnlyKeys = [
+  'forceLegacyUpdater'
+];
+
+const mergeConfigFromPanel = next => {
+  const current = settings.get('openasar', {});
+
+  for (const key of backendOnlyKeys) {
+    if (Object.prototype.hasOwnProperty.call(current, key) && !Object.prototype.hasOwnProperty.call(next, key)) {
+      next[key] = current[key];
+    }
+  }
+
+  return next;
+};
+
 let win;
 exports.open = () => {
   if (win && !win.isDestroyed()) return win.show();
@@ -34,7 +50,7 @@ exports.open = () => {
       return;
     }
 
-    config = c;
+    config = mergeConfigFromPanel(c);
     settings.set('openasar', config);
     settings.save();
   });

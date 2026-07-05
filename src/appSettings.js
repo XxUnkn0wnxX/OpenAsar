@@ -2,16 +2,20 @@ const fs = require('fs');
 
 class Settings { // Heavily based on original for compat, but simplified and tweaked
   constructor(path) {
+    this.path = path;
+    this.reload();
+
+    log('Settings', this.path, this.store);
+  }
+
+  reload() {
     try {
-      this.store = JSON.parse(fs.readFileSync(path));
+      this.store = JSON.parse(fs.readFileSync(this.path));
     } catch {
       this.store = {};
     }
 
-    this.path = path;
     this.mod = this.getMod();
-
-    log('Settings', this.path, this.store);
   }
 
   getMod() { // Get when file was last modified

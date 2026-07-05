@@ -4,6 +4,8 @@ const d = 'https://discord.com'; // Domain
 const r = releaseChannel; // Release channel
 const s = r === 'stable' ? '' : (r[0].toUpperCase() + r.slice(1)); // Suffix per release channel (stable = blank, canary = Canary, etc)
 const n = p + s; // Name as Discord<Channel> (if not stable)
+const useNewUpdater = !(process.platform === 'darwin' && oaConfig.forceLegacyUpdater === true) &&
+  (settings.get('USE_NEW_UPDATER') || process.platform === 'win32' || process.platform === 'linux');
 
 
 module.exports = {
@@ -17,5 +19,5 @@ module.exports = {
   NEW_UPDATE_ENDPOINT: settings.get('NEW_UPDATE_ENDPOINT') || 'https://updates.discord.com/',
   UPDATE_ENDPOINT: settings.get('UPDATE_ENDPOINT') || (d + '/api'),
   USE_RUST_BSPATCH: settings.get('USE_RUST_BSPATCH') || process.platform === 'darwin' || process.platform === 'linux',
-  USE_NEW_UPDATER: settings.get('USE_NEW_UPDATER') || process.platform === 'win32' || process.platform === 'linux'
+  USE_NEW_UPDATER: useNewUpdater
 };

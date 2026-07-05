@@ -1,4 +1,5 @@
 const { join } = require('path');
+const { app } = require('electron');
 
 global.log = (area, ...args) => console.log(`[\x1b[38;2;88;101;242mOpenAsar\x1b[0m > ${area}]`, ...args); // Make log global for easy usage everywhere
 
@@ -18,6 +19,29 @@ paths.init();
 
 global.settings = require('./appSettings').getSettings();
 global.oaConfig = settings.get('openasar', {});
+
+const enforceLegacyUpdaterSetting = reason => {
+  if (process.platform !== 'darwin') return false;
+
+  settings.reload();
+  global.oaConfig = settings.get('openasar', {});
+
+  if (oaConfig.forceLegacyUpdater !== true) return false;
+  if (settings.get('USE_NEW_UPDATER') === false) return true;
+
+  settings.set('USE_NEW_UPDATER', false);
+  settings.save();
+  log('Init', `Forced USE_NEW_UPDATER=false (${reason}) because openasar.forceLegacyUpdater is enabled`);
+
+  return true;
+};
+
+if (enforceLegacyUpdaterSetting('startup')) {
+  const legacyUpdaterTimer = setTimeout(() => enforceLegacyUpdaterSetting('delayed'), 25000);
+  legacyUpdaterTimer.unref?.();
+  app.on('before-quit', () => enforceLegacyUpdaterSetting('before-quit'));
+  app.on('will-quit', () => enforceLegacyUpdaterSetting('will-quit'));
+}
 
 require('./cmdSwitches')();
 

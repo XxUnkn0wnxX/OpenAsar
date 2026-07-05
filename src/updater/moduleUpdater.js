@@ -7,6 +7,7 @@ const { get } = require('https');
 
 const paths = require('../paths');
 const buildInfo = require('../utils/buildInfo');
+const updater = require('./updater');
 
 const mkdir = (x) => fs.mkdirSync(x, { recursive: true });
 
@@ -96,7 +97,17 @@ exports.init = (endpoint, { releaseChannel, version }) => {
 
   host.on('update-manually', e => events.emit('manual', e));
 
-  host.on('update-downloaded', host.quitAndInstall);
+  host.on('update-downloaded', () => {
+    if (process.platform === 'darwin') {
+      try {
+        updater.prepareMacOSPostHostUpdateHelper('', undefined, 'legacy');
+      } catch (e) {
+        log('Modules', 'Failed to prepare legacy host OpenAsar retention', e);
+      }
+    }
+
+    host.quitAndInstall();
+  });
 
   host.on('error', () => {
     log('Modules', 'Host error');

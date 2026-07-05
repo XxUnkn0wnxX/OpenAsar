@@ -15,6 +15,89 @@ const TASK_STATE_WAITING = 'Waiting';
 const TASK_STATE_WORKING = 'Working';
 
 const updaterPath = process.platform === 'darwin' ? join(process.execPath, '..', '..', 'Resources', 'updater.node') : join(process.execPath, '..', 'updater.node');
+
+const getCurrentMacOSAppPath = () => {
+  const parts = process.execPath.split('/');
+
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (parts[i].endsWith('.app')) return parts.slice(0, i + 1).join('/');
+  }
+
+  return null;
+};
+
+const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = getCurrentMacOSAppPath(), mode = 'shipit') => {
+  if (process.platform !== 'darwin') return false;
+
+  const ofs = require('original-fs');
+  const userData = paths.getUserData();
+  const bootstrapDir = join(userData, 'openasar-bootstrap');
+  const helperPath = join(bootstrapDir, 'post-shipit-helper.zsh');
+  const payloadPath = join(bootstrapDir, 'app.asar');
+  const statePath = join(bootstrapDir, 'post-shipit-state.json');
+  const logPath = join(bootstrapDir, 'post-shipit-helper.log');
+  const consoleLogPath = join(bootstrapDir, 'post-shipit-console.log');
+  const pidPath = join(bootstrapDir, 'post-shipit-helper.pid');
+  const requestPath = join(userData, 'ShipIt_request.json');
+  const currentAsar = join(require.main.filename, '..');
+
+  ofs.mkdirSync(bootstrapDir, { recursive: true });
+  for (const file of [
+    'openasar-bootstrap-app.asar',
+    'openasar-post-shipit-helper.js',
+    'openasar-post-shipit-helper.zsh',
+    'openasar-post-shipit-state.json',
+    'openasar-post-shipit-helper.log',
+    'openasar-post-shipit-console.log',
+    'openasar-post-shipit-helper.pid'
+  ]) {
+    try {
+      ofs.unlinkSync(join(userData, file));
+    } catch (_) {}
+  }
+  for (const file of [ logPath, consoleLogPath, pidPath ]) {
+    try {
+      ofs.writeFileSync(file, '');
+    } catch (_) {}
+  }
+
+  ofs.copyFileSync(currentAsar, payloadPath);
+
+  ofs.writeFileSync(helperPath, MACOS_POST_SHIPIT_HELPER);
+  ofs.writeFileSync(statePath, JSON.stringify({
+    bootstrapDir,
+    payloadPath,
+    requestPath,
+    stagedAppPath,
+    targetAppPath,
+    mode,
+    helperPath,
+    logPath,
+    consoleLogPath,
+    pidPath
+  }));
+  ofs.chmodSync(helperPath, 0o755);
+
+  const child = spawn('/usr/bin/env', [
+    'zsh',
+    helperPath,
+    payloadPath,
+    requestPath,
+    stagedAppPath ?? '',
+    targetAppPath ?? '',
+    logPath,
+    consoleLogPath,
+    pidPath,
+    mode
+  ], {
+    detached: true,
+    stdio: 'ignore'
+  });
+
+  child.unref();
+  return true;
+};
+
 class Updater extends require('events').EventEmitter {
   constructor(options) {
     super();
@@ -164,80 +247,11 @@ class Updater extends require('events').EventEmitter {
   }
 
   _getCurrentMacOSAppPath() {
-    const parts = process.execPath.split('/');
-
-    for (let i = parts.length - 1; i >= 0; i--) {
-      if (parts[i].endsWith('.app')) return parts.slice(0, i + 1).join('/');
-    }
-
-    return null;
+    return getCurrentMacOSAppPath();
   }
 
   _prepareMacOSPostShipItHelper(next) {
-    const ofs = require('original-fs');
-    const userData = paths.getUserData();
-    const bootstrapDir = join(userData, 'openasar-bootstrap');
-    const helperPath = join(bootstrapDir, 'post-shipit-helper.zsh');
-    const payloadPath = join(bootstrapDir, 'app.asar');
-    const statePath = join(bootstrapDir, 'post-shipit-state.json');
-    const logPath = join(bootstrapDir, 'post-shipit-helper.log');
-    const consoleLogPath = join(bootstrapDir, 'post-shipit-console.log');
-    const pidPath = join(bootstrapDir, 'post-shipit-helper.pid');
-    const targetAppPath = this._getCurrentMacOSAppPath();
-    const currentAsar = join(require.main.filename, '..');
-
-    ofs.mkdirSync(bootstrapDir, { recursive: true });
-    for (const file of [
-      'openasar-bootstrap-app.asar',
-      'openasar-post-shipit-helper.js',
-      'openasar-post-shipit-helper.zsh',
-      'openasar-post-shipit-state.json',
-      'openasar-post-shipit-helper.log',
-      'openasar-post-shipit-console.log',
-      'openasar-post-shipit-helper.pid'
-    ]) {
-      try {
-        ofs.unlinkSync(join(userData, file));
-      } catch (_) {}
-    }
-    for (const file of [ logPath, consoleLogPath, pidPath ]) {
-      try {
-        ofs.writeFileSync(file, '');
-      } catch (_) {}
-    }
-
-    ofs.copyFileSync(currentAsar, payloadPath);
-
-    ofs.writeFileSync(helperPath, MACOS_POST_SHIPIT_HELPER);
-    ofs.writeFileSync(statePath, JSON.stringify({
-      bootstrapDir,
-      payloadPath,
-      requestPath: join(userData, 'ShipIt_request.json'),
-      stagedAppPath: next,
-      targetAppPath,
-      helperPath,
-      logPath,
-      consoleLogPath,
-      pidPath
-    }));
-    ofs.chmodSync(helperPath, 0o755);
-
-    const child = spawn('/usr/bin/env', [
-      'zsh',
-      helperPath,
-      payloadPath,
-      join(userData, 'ShipIt_request.json'),
-      next,
-      targetAppPath ?? '',
-      logPath,
-      consoleLogPath,
-      pidPath
-    ], {
-      detached: true,
-      stdio: 'ignore'
-    });
-
-    child.unref();
+    prepareMacOSPostHostUpdateHelper(next, this._getCurrentMacOSAppPath());
   }
 
   _startCurrentVersionInner(options, versions) {
@@ -471,6 +485,7 @@ target_app_path="$4"
 log_path="$5"
 console_log_path="$6"
 pid_path="$7"
+mode="\${8:-shipit}"
 bundle_id=""
 saw_shipit=0
 
@@ -619,6 +634,38 @@ copy_openasar_into_target() {
   log "Restored OpenAsar into final app $final_asar"
 }
 
+payload_matches_target() {
+  local final_asar="$target_app_path/Contents/Resources/app.asar"
+
+  [[ -f "$payload_path" && -f "$final_asar" ]] || return 1
+  /usr/bin/cmp -s "$payload_path" "$final_asar"
+}
+
+wait_for_legacy_host_replacement() {
+  local final_asar="$target_app_path/Contents/Resources/app.asar"
+  local deadline="$((SECONDS + 180))"
+  local target_version=""
+  local seen_stock=0
+
+  while (( SECONDS < deadline )); do
+    if [[ -f "$final_asar" ]] && ! payload_matches_target; then
+      seen_stock=1
+      break
+    fi
+
+    sleep 0.5
+  done
+
+  if [[ "$seen_stock" != "1" ]]; then
+    log "Legacy host replacement was not observed before timeout; attempting final patch anyway"
+  fi
+
+  if [[ -f "$target_app_path/Contents/Resources/build_info.json" ]]; then
+    target_version="$(json_string_value version "$target_app_path/Contents/Resources/build_info.json" || true)"
+    [[ -n "$target_version" ]] && log "Legacy target app version before patch: $target_version"
+  fi
+}
+
 app_executable_path() {
   local info_plist="$target_app_path/Contents/Info.plist"
   local executable_name
@@ -692,27 +739,31 @@ relaunch_target() {
   return 1
 }
 
-log "Post-ShipIt helper started; staged=$staged_app_path target=$target_app_path"
+log "Post-ShipIt helper started; mode=$mode staged=$staged_app_path target=$target_app_path"
 
-deadline="$((SECONDS + 120))"
-no_shipit_deadline="$((SECONDS + 5))"
-while (( SECONDS < deadline )); do
-  refresh_shipit_state || true
+if [[ "$mode" = "legacy" ]]; then
+  wait_for_legacy_host_replacement
+else
+  deadline="$((SECONDS + 120))"
+  no_shipit_deadline="$((SECONDS + 5))"
+  while (( SECONDS < deadline )); do
+    refresh_shipit_state || true
 
-  if shipit_running; then
-    saw_shipit=1
-  elif [[ "$saw_shipit" = "1" && -n "$target_app_path" && -f "$target_app_path/Contents/Resources/app.asar" ]]; then
-    break
-  elif (( SECONDS >= no_shipit_deadline )) && [[ -n "$target_app_path" && -f "$target_app_path/Contents/Resources/app.asar" ]]; then
-    log "ShipIt did not appear during startup grace; patching target directly"
-    break
+    if shipit_running; then
+      saw_shipit=1
+    elif [[ "$saw_shipit" = "1" && -n "$target_app_path" && -f "$target_app_path/Contents/Resources/app.asar" ]]; then
+      break
+    elif (( SECONDS >= no_shipit_deadline )) && [[ -n "$target_app_path" && -f "$target_app_path/Contents/Resources/app.asar" ]]; then
+      log "ShipIt did not appear during startup grace; patching target directly"
+      break
+    fi
+
+    sleep 0.25
+  done
+
+  if [[ "$saw_shipit" != "1" ]]; then
+    log "ShipIt did not appear before timeout; attempting final patch anyway"
   fi
-
-  sleep 0.25
-done
-
-if [[ "$saw_shipit" != "1" ]]; then
-  log "ShipIt did not appear before timeout; attempting final patch anyway"
 fi
 
 if [[ -z "$target_app_path" ]]; then
@@ -780,5 +831,6 @@ module.exports = {
     return instance.valid;
   },
 
-  getUpdater: () => (instance != null && instance.valid && instance) || null
+  getUpdater: () => (instance != null && instance.valid && instance) || null,
+  prepareMacOSPostHostUpdateHelper
 };

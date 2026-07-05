@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-06
+
+### macOS updater override
+
+- Added a backend-only `openasar.forceLegacyUpdater` setting for macOS so OpenAsar can ignore Discord's forced `USE_NEW_UPDATER` flag and stay on the legacy updater path when intentionally testing or pinning host builds after bootstrap.
+- Wrote top-level `USE_NEW_UPDATER: false` during OpenAsar startup, again after 25 seconds, and again during quit whenever `openasar.forceLegacyUpdater` is enabled, so Discord cannot leave the setting true across launches without OpenAsar correcting it again.
+- Reloaded `settings.json` before these forced writes so Discord changes made after startup are preserved while the updater flag is corrected.
+- Reused the macOS post-host-update helper for legacy updater host replacements; new updater launches the helper in `shipit` mode, while legacy updater launches it in `legacy` mode and waits for the final app bundle to be replaced before restoring OpenAsar.
+- Preserved backend-only OpenAsar config keys when the CDN-hosted config panel saves, so older panel payloads do not drop `forceLegacyUpdater`.
+
 ## 2026-07-04
 
 ### macOS ShipIt bootstrap follow-up

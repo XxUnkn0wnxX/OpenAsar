@@ -12,7 +12,7 @@
 - **:cloud: Lightweight**: <1% of Discord's original size (9mb -> ~50kb)
 - **:shield: No Tracking**: Removes Discord's built-in tracking for crashes and errors in the asar (not app itself)
 - **:jigsaw: BetterDiscord Compatible**: This fork keeps the OpenAsar settings entry working with [BetterDiscord](https://github.com/BetterDiscord/BetterDiscord) installed
-- **:package: macOS Bootstrap Safe**: Handles Discord's newer ShipIt host-app bootstrap by using a temporary helper to patch the final macOS app after the updater handoff
+- **:package: macOS Bootstrap Safe**: Handles Discord's newer ShipIt host-app bootstrap and legacy macOS host replacements by using a temporary helper to patch the final macOS app after the updater handoff
 
 ### See [FAQ](faq.md) for more details
 
@@ -30,3 +30,5 @@ See [docs/changelog.md](docs/changelog.md) for the current local work log / chan
 ## Config
 
 You can configure OpenAsar by clicking the "OpenAsar..." version info in the bottom of your settings sidebar, which will open the config window.
+
+Backend-only options can also be added under the `openasar` object in the channel's `settings.json`. On macOS, `"forceLegacyUpdater": true` forces OpenAsar to ignore Discord's `USE_NEW_UPDATER` flag, writes top-level `"USE_NEW_UPDATER": false` during OpenAsar startup, repeats that write after a short delay, repeats it again while Discord is quitting, and uses the legacy updater path. This is a manual escape hatch for testing or pinned host builds; the ShipIt bootstrap helper is only needed when the new updater path is active.
