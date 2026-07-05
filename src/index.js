@@ -20,9 +20,43 @@ paths.init();
 global.settings = require('./appSettings').getSettings();
 global.oaConfig = settings.get('openasar', {});
 
-const enforceLegacyUpdaterSetting = reason => {
-  if (process.platform !== 'darwin') return false;
+const openAsarDefaults = {
+  setup: false,
+  cmdPreset: 'perf',
+  customFlags: '',
+  noTrack: true,
+  noTyping: false,
+  themeSync: true,
+  quickstart: false,
+  multiInstance: false,
+  domOptimizer: true,
+  autoupdate: true,
+  css: '',
+  js: '',
+  forceLegacyUpdater: false
+};
 
+const ensureOpenAsarDefaults = () => {
+  if (!global.oaConfig || typeof global.oaConfig !== 'object' || Array.isArray(global.oaConfig)) global.oaConfig = {};
+
+  let changed = false;
+
+  for (const [ key, value ] of Object.entries(openAsarDefaults)) {
+    if (!Object.prototype.hasOwnProperty.call(global.oaConfig, key)) {
+      global.oaConfig[key] = value;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    settings.set('openasar', global.oaConfig);
+    settings.save();
+  }
+};
+
+ensureOpenAsarDefaults();
+
+const enforceLegacyUpdaterSetting = reason => {
   settings.reload();
   global.oaConfig = settings.get('openasar', {});
 
@@ -37,8 +71,6 @@ const enforceLegacyUpdaterSetting = reason => {
 };
 
 if (enforceLegacyUpdaterSetting('startup')) {
-  const legacyUpdaterTimer = setTimeout(() => enforceLegacyUpdaterSetting('delayed'), 25000);
-  legacyUpdaterTimer.unref?.();
   app.on('before-quit', () => enforceLegacyUpdaterSetting('before-quit'));
   app.on('will-quit', () => enforceLegacyUpdaterSetting('will-quit'));
 }

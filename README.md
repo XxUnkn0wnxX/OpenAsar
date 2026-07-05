@@ -31,4 +31,4 @@ See [docs/changelog.md](docs/changelog.md) for the current local work log / chan
 
 You can configure OpenAsar by clicking the "OpenAsar..." version info in the bottom of your settings sidebar, which will open the config window.
 
-Backend-only options can also be added under the `openasar` object in the channel's `settings.json`. On macOS, `"forceLegacyUpdater": true` forces OpenAsar to ignore Discord's `USE_NEW_UPDATER` flag, writes top-level `"USE_NEW_UPDATER": false` during OpenAsar startup, repeats that write after a short delay, repeats it again while Discord is quitting, and uses the legacy updater path. This is a manual escape hatch for testing or pinned host builds; the ShipIt bootstrap helper is only needed when the new updater path is active.
+See [docs/config.md](docs/config.md) for a reference of the settings OpenAsar stores under the `openasar` object.

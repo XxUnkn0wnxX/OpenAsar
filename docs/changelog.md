@@ -4,9 +4,12 @@
 
 ### macOS updater override
 
-- Added a backend-only `openasar.forceLegacyUpdater` setting for macOS so OpenAsar can ignore Discord's forced `USE_NEW_UPDATER` flag and stay on the legacy updater path when intentionally testing or pinning host builds after bootstrap.
-- Wrote top-level `USE_NEW_UPDATER: false` during OpenAsar startup, again after 25 seconds, and again during quit whenever `openasar.forceLegacyUpdater` is enabled, so Discord cannot leave the setting true across launches without OpenAsar correcting it again.
+- Added a backend-only `openasar.forceLegacyUpdater` setting so OpenAsar can ignore Discord's forced `USE_NEW_UPDATER` flag and stay on the legacy updater path when intentionally testing or pinning host builds after bootstrap.
+- Blocked Discord settings writes that try to set `USE_NEW_UPDATER: true` while `openasar.forceLegacyUpdater` is enabled, so the flag is forced false before it reaches `settings.json`.
+- Wrote top-level `USE_NEW_UPDATER: false` during OpenAsar startup and again during quit whenever `openasar.forceLegacyUpdater` is enabled, so Discord cannot leave the setting true across launches without OpenAsar correcting it again.
 - Reloaded `settings.json` before these forced writes so Discord changes made after startup are preserved while the updater flag is corrected.
+- Filled missing OpenAsar default settings into the current channel's `settings.json` on startup without overwriting existing values, so backend-only keys like `forceLegacyUpdater` are visible and easy to edit.
+- Added `docs/config.md` with a concise reference for the `openasar` settings block.
 - Reused the macOS post-host-update helper for legacy updater host replacements; new updater launches the helper in `shipit` mode, while legacy updater launches it in `legacy` mode and waits for the final app bundle to be replaced before restoring OpenAsar.
 - Preserved backend-only OpenAsar config keys when the CDN-hosted config panel saves, so older panel payloads do not drop `forceLegacyUpdater`.
 

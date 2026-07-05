@@ -29,6 +29,15 @@ class Settings { // Heavily based on original for compat, but simplified and twe
   }
 
   set(k, v) {
+    if (
+      k === 'USE_NEW_UPDATER' &&
+      v === true &&
+      this.store.openasar?.forceLegacyUpdater === true
+    ) {
+      v = false;
+      log('Settings', 'Blocked USE_NEW_UPDATER=true because openasar.forceLegacyUpdater is enabled');
+    }
+
     this.store[k] = v;
   }
 
