@@ -11,6 +11,9 @@
 - Filled missing OpenAsar default settings into the current channel's `settings.json` on startup without overwriting existing values, so backend-only keys like `forceLegacyUpdater` are visible and easy to edit.
 - Added `docs/config.md` with a concise reference for the `openasar` settings block.
 - Reused the macOS post-host-update helper for legacy updater host replacements; new updater launches the helper in `shipit` mode, while legacy updater launches it in `legacy` mode and waits for the final app bundle to be replaced before restoring OpenAsar.
+- Armed the macOS helper during startup and quit when `forceLegacyUpdater` is enabled, giving Discord's delayed legacy host replacement a bounded watch window before stock `app.asar` can remain installed.
+- Logged helper preparation/start reasons in `openasar-bootstrap/post-shipit-helper.log` and append-only `post-shipit-arm.log`, making startup, `before-quit`, `will-quit`, and updater-triggered helper launches visible during testing.
+- Ensured each helper arm terminates any older helper processes for the same channel before starting a replacement, and made pidfile cleanup ignore pidfiles now owned by a newer helper.
 - Preserved backend-only OpenAsar config keys when the CDN-hosted config panel saves, so older panel payloads do not drop `forceLegacyUpdater`.
 
 ## 2026-07-04

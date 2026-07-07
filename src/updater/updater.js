@@ -26,7 +26,7 @@ const getCurrentMacOSAppPath = () => {
   return null;
 };
 
-const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = getCurrentMacOSAppPath(), mode = 'shipit') => {
+const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = getCurrentMacOSAppPath(), mode = 'shipit', reason = '') => {
   if (process.platform !== 'darwin') return false;
 
   const ofs = require('original-fs');
@@ -37,11 +37,36 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
   const statePath = join(bootstrapDir, 'post-shipit-state.json');
   const logPath = join(bootstrapDir, 'post-shipit-helper.log');
   const consoleLogPath = join(bootstrapDir, 'post-shipit-console.log');
+  const armLogPath = join(bootstrapDir, 'post-shipit-arm.log');
   const pidPath = join(bootstrapDir, 'post-shipit-helper.pid');
   const requestPath = join(userData, 'ShipIt_request.json');
   const currentAsar = join(require.main.filename, '..');
+  const stoppedExistingPids = [];
+  const appendBootstrapLog = message => {
+    try {
+      const line = `[${new Date().toString()}] ${message}\n`;
+      ofs.appendFileSync(logPath, line);
+      ofs.appendFileSync(armLogPath, line);
+    } catch (_) {}
+  };
 
   ofs.mkdirSync(bootstrapDir, { recursive: true });
+  try {
+    const psOutput = execSync('/bin/ps -axo pid=,command=', { encoding: 'utf8' });
+    for (const line of psOutput.split('\n')) {
+      const match = line.match(/^\s*(\d+)\s+(.*)$/);
+      if (match == null) continue;
+
+      const pid = parseInt(match[1], 10);
+      const command = match[2];
+      if (!Number.isFinite(pid) || pid <= 0 || pid === process.pid) continue;
+      if (!command.includes(helperPath) || !command.includes(bootstrapDir)) continue;
+
+      process.kill(pid, 'SIGTERM');
+      stoppedExistingPids.push(pid);
+    }
+  } catch (_) {}
+
   for (const file of [
     'openasar-bootstrap-app.asar',
     'openasar-post-shipit-helper.js',
@@ -60,8 +85,10 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
       ofs.writeFileSync(file, '');
     } catch (_) {}
   }
+  if (stoppedExistingPids.length > 0) appendBootstrapLog(`Stopped existing OpenAsar helper pids=${stoppedExistingPids.join(',')}`);
 
   ofs.copyFileSync(currentAsar, payloadPath);
+  appendBootstrapLog(`Prepared OpenAsar helper; mode=${mode} reason=${reason || 'unspecified'} staged=${stagedAppPath || '(none)'} target=${targetAppPath || '(unknown)'} payload=${payloadPath}`);
 
   ofs.writeFileSync(helperPath, MACOS_POST_SHIPIT_HELPER);
   ofs.writeFileSync(statePath, JSON.stringify({
@@ -71,9 +98,11 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
     stagedAppPath,
     targetAppPath,
     mode,
+    reason,
     helperPath,
     logPath,
     consoleLogPath,
+    armLogPath,
     pidPath
   }));
   ofs.chmodSync(helperPath, 0o755);
@@ -88,15 +117,19 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
     logPath,
     consoleLogPath,
     pidPath,
-    mode
+    mode,
+    reason
   ], {
     detached: true,
     stdio: 'ignore'
   });
 
+  appendBootstrapLog(`Started OpenAsar helper pid=${child.pid} mode=${mode} reason=${reason || 'unspecified'}`);
   child.unref();
   return true;
 };
+
+const prepareMacOSLegacyUpdaterGuard = reason => prepareMacOSPostHostUpdateHelper('', getCurrentMacOSAppPath(), 'guard', reason);
 
 class Updater extends require('events').EventEmitter {
   constructor(options) {
@@ -251,7 +284,7 @@ class Updater extends require('events').EventEmitter {
   }
 
   _prepareMacOSPostShipItHelper(next) {
-    prepareMacOSPostHostUpdateHelper(next, this._getCurrentMacOSAppPath());
+    prepareMacOSPostHostUpdateHelper(next, this._getCurrentMacOSAppPath(), 'shipit', 'new-updater-host');
   }
 
   _startCurrentVersionInner(options, versions) {
@@ -486,11 +519,17 @@ log_path="$5"
 console_log_path="$6"
 pid_path="$7"
 mode="\${8:-shipit}"
+reason="\${9:-}"
 bundle_id=""
 saw_shipit=0
 
 cleanup_pid_file() {
-  /bin/rm -f "$pid_path" 2>/dev/null || true
+  local current_pid=""
+
+  [[ -f "$pid_path" ]] && current_pid="$(/bin/cat "$pid_path" 2>/dev/null || true)"
+  if [[ "$current_pid" = "$$" ]]; then
+    /bin/rm -f "$pid_path" 2>/dev/null || true
+  fi
 }
 
 /bin/mkdir -p "$(/usr/bin/dirname "$pid_path")" 2>/dev/null || true
@@ -666,6 +705,38 @@ wait_for_legacy_host_replacement() {
   fi
 }
 
+wait_for_guard_replacement() {
+  local final_asar="$target_app_path/Contents/Resources/app.asar"
+  local deadline="$((SECONDS + 300))"
+  local target_version=""
+
+  if [[ -f "$target_app_path/Contents/Resources/build_info.json" ]]; then
+    target_version="$(json_string_value version "$target_app_path/Contents/Resources/build_info.json" || true)"
+    [[ -n "$target_version" ]] && log "Guard target app version at arm time: $target_version"
+  fi
+
+  if [[ -f "$final_asar" ]] && ! payload_matches_target; then
+    log "Guard found target app.asar already differs from OpenAsar payload"
+    return 0
+  fi
+
+  log "Guard armed; watching for target app.asar replacement"
+  while (( SECONDS < deadline )); do
+    if [[ -f "$final_asar" ]] && ! payload_matches_target; then
+      wait_for_stable_asar "$final_asar" || return 1
+      if ! payload_matches_target; then
+        log "Guard detected target app.asar replacement"
+        return 0
+      fi
+    fi
+
+    sleep 0.5
+  done
+
+  log "Guard saw no app.asar replacement before timeout; exiting without patch"
+  return 1
+}
+
 app_executable_path() {
   local info_plist="$target_app_path/Contents/Info.plist"
   local executable_name
@@ -739,10 +810,17 @@ relaunch_target() {
   return 1
 }
 
-log "Post-ShipIt helper started; mode=$mode staged=$staged_app_path target=$target_app_path"
+log "Post-ShipIt helper started; mode=$mode reason=$reason staged=$staged_app_path target=$target_app_path"
+
+if [[ "$mode" != "shipit" && -z "$target_app_path" ]]; then
+  log "Unable to determine target Discord.app path"
+  exit 1
+fi
 
 if [[ "$mode" = "legacy" ]]; then
   wait_for_legacy_host_replacement
+elif [[ "$mode" = "guard" ]]; then
+  wait_for_guard_replacement || exit 0
 else
   deadline="$((SECONDS + 120))"
   no_shipit_deadline="$((SECONDS + 5))"
@@ -832,5 +910,6 @@ module.exports = {
   },
 
   getUpdater: () => (instance != null && instance.valid && instance) || null,
-  prepareMacOSPostHostUpdateHelper
+  prepareMacOSPostHostUpdateHelper,
+  prepareMacOSLegacyUpdaterGuard
 };

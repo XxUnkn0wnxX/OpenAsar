@@ -12,7 +12,7 @@
 - **:cloud: Lightweight**: <1% of Discord's original size (9mb -> ~50kb)
 - **:shield: No Tracking**: Removes Discord's built-in tracking for crashes and errors in the asar (not app itself)
 - **:jigsaw: BetterDiscord Compatible**: This fork keeps the OpenAsar settings entry working with [BetterDiscord](https://github.com/BetterDiscord/BetterDiscord) installed
-- **:package: macOS Bootstrap Safe**: Handles Discord's newer ShipIt host-app bootstrap and legacy macOS host replacements by using a temporary helper to patch the final macOS app after the updater handoff
+- **:package: macOS Bootstrap Safe**: Handles Discord's newer ShipIt host-app bootstrap and legacy macOS host replacements with a temporary helper that can also guard startup/quit handoffs
 
 ### See [FAQ](faq.md) for more details
 

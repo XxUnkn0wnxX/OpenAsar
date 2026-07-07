@@ -71,8 +71,27 @@ const enforceLegacyUpdaterSetting = reason => {
 };
 
 if (enforceLegacyUpdaterSetting('startup')) {
-  app.on('before-quit', () => enforceLegacyUpdaterSetting('before-quit'));
-  app.on('will-quit', () => enforceLegacyUpdaterSetting('will-quit'));
+  const armMacOSLegacyUpdaterGuard = reason => {
+    if (process.platform !== 'darwin') return;
+    if (oaConfig.forceLegacyUpdater !== true) return;
+
+    try {
+      require('./updater/updater').prepareMacOSLegacyUpdaterGuard(reason);
+      log('Init', `Armed macOS legacy updater OpenAsar guard (${reason})`);
+    } catch (e) {
+      log('Init', `Failed to arm macOS legacy updater OpenAsar guard (${reason})`, e);
+    }
+  };
+
+  armMacOSLegacyUpdaterGuard('startup');
+  app.on('before-quit', () => {
+    enforceLegacyUpdaterSetting('before-quit');
+    armMacOSLegacyUpdaterGuard('before-quit');
+  });
+  app.on('will-quit', () => {
+    enforceLegacyUpdaterSetting('will-quit');
+    armMacOSLegacyUpdaterGuard('will-quit');
+  });
 }
 
 require('./cmdSwitches')();

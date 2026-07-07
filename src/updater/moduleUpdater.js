@@ -100,7 +100,7 @@ exports.init = (endpoint, { releaseChannel, version }) => {
   host.on('update-downloaded', () => {
     if (process.platform === 'darwin') {
       try {
-        updater.prepareMacOSPostHostUpdateHelper('', undefined, 'legacy');
+        updater.prepareMacOSPostHostUpdateHelper('', undefined, 'legacy', 'update-downloaded');
       } catch (e) {
         log('Modules', 'Failed to prepare legacy host OpenAsar retention', e);
       }

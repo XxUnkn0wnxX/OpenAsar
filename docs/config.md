@@ -71,4 +71,4 @@ Runs custom JavaScript in the main Discord window after DOM ready. If `js` or `c
 
 ### `forceLegacyUpdater`
 
-When set to `true`, OpenAsar forces `USE_NEW_UPDATER` to behave as false, blocks Discord attempts to save it back to `true`, writes top-level `USE_NEW_UPDATER: false` during startup and quit, and uses the legacy updater path where Discord still supports it. The macOS post-update app-bundle helper remains macOS-specific.
+When set to `true`, OpenAsar forces `USE_NEW_UPDATER` to behave as false, blocks Discord attempts to save it back to `true`, writes top-level `USE_NEW_UPDATER: false` during startup and quit, and uses the legacy updater path where Discord still supports it. On macOS, OpenAsar also arms a short-lived helper during startup/quit so app-bundle replacements can be patched back after Discord hands off to the updater.
