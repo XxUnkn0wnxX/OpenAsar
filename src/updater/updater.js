@@ -39,9 +39,41 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
   const consoleLogPath = join(bootstrapDir, 'post-shipit-console.log');
   const armLogPath = join(bootstrapDir, 'post-shipit-arm.log');
   const pidPath = join(bootstrapDir, 'post-shipit-helper.pid');
+  const pendingPath = join(bootstrapDir, 'post-shipit-update-pending.json');
   const requestPath = join(userData, 'ShipIt_request.json');
   const currentAsar = join(require.main.filename, '..');
   const stoppedExistingPids = [];
+  const writeInactivePendingMarker = reason => {
+    try {
+      ofs.writeFileSync(pendingPath, JSON.stringify({
+        pending: false,
+        updatedAt: new Date().toISOString(),
+        reason,
+        targetAppPath
+      }, null, 2));
+    } catch (_) {}
+  };
+  const ensurePendingMarker = () => {
+    if (mode === 'shipit' || mode === 'legacy') {
+      try {
+        ofs.writeFileSync(pendingPath, JSON.stringify({
+          pending: true,
+          createdAt: new Date().toISOString(),
+          mode,
+          reason,
+          stagedAppPath,
+          targetAppPath
+        }, null, 2));
+      } catch (_) {}
+      return;
+    }
+
+    try {
+      ofs.statSync(pendingPath);
+    } catch (_) {
+      writeInactivePendingMarker('initialized');
+    }
+  };
   const appendBootstrapLog = message => {
     try {
       const line = `[${new Date().toString()}] ${message}\n`;
@@ -49,9 +81,7 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
       ofs.appendFileSync(armLogPath, line);
     } catch (_) {}
   };
-
-  ofs.mkdirSync(bootstrapDir, { recursive: true });
-  try {
+  const stopExistingHelpers = () => {
     const psOutput = execSync('/bin/ps -axo pid=,command=', { encoding: 'utf8' });
     for (const line of psOutput.split('\n')) {
       const match = line.match(/^\s*(\d+)\s+(.*)$/);
@@ -65,7 +95,39 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
       process.kill(pid, 'SIGTERM');
       stoppedExistingPids.push(pid);
     }
-  } catch (_) {}
+  };
+  const guardHasPendingUpdate = () => {
+    if (mode !== 'guard') return true;
+
+    let markerStat;
+    try {
+      markerStat = ofs.statSync(pendingPath);
+    } catch (_) {
+      writeInactivePendingMarker('missing-marker');
+      return false;
+    }
+
+    if (Date.now() - markerStat.mtimeMs > 300000) {
+      writeInactivePendingMarker('stale-marker');
+      return false;
+    }
+
+    try {
+      const marker = JSON.parse(ofs.readFileSync(pendingPath, 'utf8'));
+      if (marker.pending !== true) return false;
+      if (marker.targetAppPath && targetAppPath && marker.targetAppPath !== targetAppPath) {
+        writeInactivePendingMarker('target-mismatch');
+        return false;
+      }
+    } catch (_) {
+      writeInactivePendingMarker('invalid-marker');
+      return false;
+    }
+
+    return true;
+  };
+
+  ofs.mkdirSync(bootstrapDir, { recursive: true });
 
   for (const file of [
     'openasar-bootstrap-app.asar',
@@ -85,10 +147,15 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
       ofs.writeFileSync(file, '');
     } catch (_) {}
   }
+
+  try {
+    stopExistingHelpers();
+  } catch (_) {}
   if (stoppedExistingPids.length > 0) appendBootstrapLog(`Stopped existing OpenAsar helper pids=${stoppedExistingPids.join(',')}`);
 
   ofs.copyFileSync(currentAsar, payloadPath);
   appendBootstrapLog(`Prepared OpenAsar helper; mode=${mode} reason=${reason || 'unspecified'} staged=${stagedAppPath || '(none)'} target=${targetAppPath || '(unknown)'} payload=${payloadPath}`);
+  ensurePendingMarker();
 
   ofs.writeFileSync(helperPath, MACOS_POST_SHIPIT_HELPER);
   ofs.writeFileSync(statePath, JSON.stringify({
@@ -103,9 +170,15 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
     logPath,
     consoleLogPath,
     armLogPath,
-    pidPath
+    pidPath,
+    pendingPath
   }));
   ofs.chmodSync(helperPath, 0o755);
+
+  if (!guardHasPendingUpdate()) {
+    appendBootstrapLog(`Skipped OpenAsar helper start; no pending updater handoff for mode=${mode}`);
+    return false;
+  }
 
   const child = spawn('/usr/bin/env', [
     'zsh',
@@ -118,7 +191,8 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
     consoleLogPath,
     pidPath,
     mode,
-    reason
+    reason,
+    pendingPath
   ], {
     detached: true,
     stdio: 'ignore'
@@ -520,6 +594,7 @@ console_log_path="$6"
 pid_path="$7"
 mode="\${8:-shipit}"
 reason="\${9:-}"
+pending_path="\${10:-$(/usr/bin/dirname "$pid_path")/post-shipit-update-pending.json}"
 bundle_id=""
 saw_shipit=0
 
@@ -556,6 +631,14 @@ json_string_value() {
 
   [[ -f "$file" ]] || return 1
   OPENASAR_JSON_KEY="$key" /usr/bin/perl -0ne 'BEGIN { $key = quotemeta $ENV{"OPENASAR_JSON_KEY"}; } print $1 if /"$key"\\s*:\\s*"([^"]*)"/' "$file" 2>/dev/null
+}
+
+json_bool_true() {
+  local key="$1"
+  local file="$2"
+
+  [[ -f "$file" ]] || return 1
+  OPENASAR_JSON_KEY="$key" /usr/bin/perl -0ne 'BEGIN { $key = quotemeta $ENV{"OPENASAR_JSON_KEY"}; $found = 0; } $found = 1 if /"$key"\\s*:\\s*true\\b/; END { exit($found ? 0 : 1) }' "$file" 2>/dev/null
 }
 
 file_url_to_path() {
@@ -680,6 +763,53 @@ payload_matches_target() {
   /usr/bin/cmp -s "$payload_path" "$final_asar"
 }
 
+pending_update_valid() {
+  local marker_target=""
+  local marker_mode=""
+  local marker_time=""
+  local now=""
+  local age=""
+
+  if [[ ! -f "$pending_path" ]]; then
+    log "Guard skipped; no updater pending marker"
+    /usr/bin/printf '{\n  "pending": false\n}\n' > "$pending_path" 2>/dev/null || true
+    return 1
+  fi
+
+  if ! json_bool_true pending "$pending_path"; then
+    log "Guard skipped; pending marker is inactive"
+    return 1
+  fi
+
+  marker_target="$(json_string_value targetAppPath "$pending_path" || true)"
+  marker_mode="$(json_string_value mode "$pending_path" || true)"
+
+  if [[ -n "$marker_target" && "$marker_target" != "$target_app_path" ]]; then
+    log "Guard skipped; pending marker targets $marker_target instead of $target_app_path"
+    /usr/bin/printf '{\n  "pending": false\n}\n' > "$pending_path" 2>/dev/null || true
+    return 1
+  fi
+
+  marker_time="$(/usr/bin/stat -f %m "$pending_path" 2>/dev/null || true)"
+  now="$(/bin/date +%s 2>/dev/null || true)"
+  if [[ -n "$marker_time" && -n "$now" ]]; then
+    age="$((now - marker_time))"
+    if (( age > 300 )); then
+      log "Guard skipped; pending marker is stale (\${age}s old)"
+      /usr/bin/printf '{\n  "pending": false\n}\n' > "$pending_path" 2>/dev/null || true
+      return 1
+    fi
+  fi
+
+  log "Guard accepted updater pending marker; mode=\${marker_mode:-unknown} target=\${marker_target:-unknown}"
+  return 0
+}
+
+clear_pending_update_marker() {
+  [[ -n "$pending_path" ]] || return 0
+  /usr/bin/printf '{\n  "pending": false\n}\n' > "$pending_path" 2>/dev/null || true
+}
+
 wait_for_legacy_host_replacement() {
   local final_asar="$target_app_path/Contents/Resources/app.asar"
   local deadline="$((SECONDS + 180))"
@@ -707,7 +837,7 @@ wait_for_legacy_host_replacement() {
 
 wait_for_guard_replacement() {
   local final_asar="$target_app_path/Contents/Resources/app.asar"
-  local deadline="$((SECONDS + 300))"
+  local deadline="$((SECONDS + 30))"
   local target_version=""
 
   if [[ -f "$target_app_path/Contents/Resources/build_info.json" ]]; then
@@ -820,7 +950,11 @@ fi
 if [[ "$mode" = "legacy" ]]; then
   wait_for_legacy_host_replacement
 elif [[ "$mode" = "guard" ]]; then
-  wait_for_guard_replacement || exit 0
+  pending_update_valid || exit 0
+  if ! wait_for_guard_replacement; then
+    clear_pending_update_marker
+    exit 0
+  fi
 else
   deadline="$((SECONDS + 120))"
   no_shipit_deadline="$((SECONDS + 5))"
@@ -856,6 +990,7 @@ kill_discord_from_target KILL
 copy_openasar_into_target || exit 1
 relaunch_target
 /bin/rm -f "$payload_path" 2>> "$log_path" || true
+clear_pending_update_marker
 
 log "Post-ShipIt helper complete"
 `;

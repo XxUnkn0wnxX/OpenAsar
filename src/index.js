@@ -76,8 +76,11 @@ if (enforceLegacyUpdaterSetting('startup')) {
     if (oaConfig.forceLegacyUpdater !== true) return;
 
     try {
-      require('./updater/updater').prepareMacOSLegacyUpdaterGuard(reason);
-      log('Init', `Armed macOS legacy updater OpenAsar guard (${reason})`);
+      if (require('./updater/updater').prepareMacOSLegacyUpdaterGuard(reason)) {
+        log('Init', `Armed macOS legacy updater OpenAsar guard (${reason})`);
+      } else {
+        log('Init', `Skipped macOS legacy updater OpenAsar guard (${reason}); no pending updater handoff`);
+      }
     } catch (e) {
       log('Init', `Failed to arm macOS legacy updater OpenAsar guard (${reason})`, e);
     }

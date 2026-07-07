@@ -14,6 +14,7 @@
 - Armed the macOS helper during startup and quit when `forceLegacyUpdater` is enabled, giving Discord's delayed legacy host replacement a bounded watch window before stock `app.asar` can remain installed.
 - Logged helper preparation/start reasons in `openasar-bootstrap/post-shipit-helper.log` and append-only `post-shipit-arm.log`, making startup, `before-quit`, `will-quit`, and updater-triggered helper launches visible during testing.
 - Ensured each helper arm terminates any older helper processes for the same channel before starting a replacement, and made pidfile cleanup ignore pidfiles now owned by a newer helper.
+- Limited startup/quit guard patching to real updater handoffs by requiring a fresh per-channel pending-update marker before replacing a changed target `app.asar`; normal startup/quit still refreshes the per-channel `openasar-bootstrap` folder and helper assets, keeps `post-shipit-update-pending.json` initialized as `pending: false`, only starts the helper for `pending: true`, resets finished/stale markers back to `false`, and marker-backed guards wait only 30 seconds.
 - Preserved backend-only OpenAsar config keys when the CDN-hosted config panel saves, so older panel payloads do not drop `forceLegacyUpdater`.
 
 ## 2026-07-04
