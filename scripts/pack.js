@@ -10,6 +10,7 @@ let disableAutoUpdate = false;
 let updateRepo = 'GooseMod/OpenAsar';
 let version;
 let output = join(root, 'tmp', 'openasar-build', 'app.asar');
+let macOSRecoveryTimeoutSeconds = process.env.OPENASAR_MACOS_RECOVERY_TIMEOUT_SECONDS ?? '90';
 
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
@@ -34,8 +35,13 @@ for (let i = 0; i < args.length; i++) {
     continue;
   }
 
+  if (arg === '--macos-recovery-timeout-seconds') {
+    macOSRecoveryTimeoutSeconds = args[++i];
+    continue;
+  }
+
   if (arg === '--help') {
-    console.log('Usage: node scripts/pack.js [--disable-autoupdate] [--update-repo <owner/repo>] [--version <value>] [--output <path>]');
+    console.log('Usage: node scripts/pack.js [--disable-autoupdate] [--update-repo <owner/repo>] [--version <value>] [--output <path>] [--macos-recovery-timeout-seconds <seconds>]');
     process.exit(0);
   }
 
@@ -43,6 +49,12 @@ for (let i = 0; i < args.length; i++) {
 }
 
 if (!/^[^/\s]+\/[^/\s]+$/.test(updateRepo)) throw new Error(`Invalid --update-repo value: ${updateRepo}`);
+
+const parsedMacOSRecoveryTimeoutSeconds = Number(macOSRecoveryTimeoutSeconds);
+if (!/^[1-9]\d*$/.test(String(macOSRecoveryTimeoutSeconds)) || !Number.isSafeInteger(parsedMacOSRecoveryTimeoutSeconds)) {
+  throw new Error(`Invalid macOS recovery timeout: ${macOSRecoveryTimeoutSeconds}`);
+}
+macOSRecoveryTimeoutSeconds = parsedMacOSRecoveryTimeoutSeconds;
 
 if (!version) {
   const git = spawnSync('git', ['rev-parse', '--short', 'HEAD'], {
@@ -132,6 +144,11 @@ indexCode = indexCode.replace("global.oaVersion = 'nightly';", `global.oaVersion
 indexCode = indexCode.replace('<disableAutoUpdate>', disableAutoUpdate ? 'true' : 'false');
 indexCode = indexCode.replaceAll('<updateRepo>', updateRepo);
 writeFileSync(indexPath, indexCode);
+
+const updaterPath = join(tmpRoot, 'src', 'updater', 'updater.js');
+let updaterCode = readFileSync(updaterPath, 'utf8');
+updaterCode = updaterCode.replace('<macOSRecoveryTimeoutSeconds>', String(macOSRecoveryTimeoutSeconds));
+writeFileSync(updaterPath, updaterCode);
 
 stripTree(join(tmpRoot, 'src'));
 

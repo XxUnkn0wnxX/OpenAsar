@@ -2,6 +2,15 @@ name: Nightly Disable Auto-Update
 
 on:
   workflow_dispatch:
+    inputs:
+      macos_recovery_timeout_seconds:
+        description: macOS recovery timeout in seconds
+        required: false
+        default: '60'
+        type: string
+
+env:
+  OPENASAR_MACOS_RECOVERY_TIMEOUT_SECONDS: ${{ inputs.macos_recovery_timeout_seconds || '60' }}
 
 jobs:
   build:

@@ -13,6 +13,12 @@ let instance;
 let currentVersion;
 let macOSRestartRequestedAt = 0;
 const restartIntentWindowMs = 5000;
+const configuredMacOSRecoveryTimeoutSeconds = Number('<macOSRecoveryTimeoutSeconds>');
+const macOSRecoveryTimeoutSeconds = Number.isSafeInteger(configuredMacOSRecoveryTimeoutSeconds)
+  && configuredMacOSRecoveryTimeoutSeconds > 0
+  ? configuredMacOSRecoveryTimeoutSeconds
+  : 90;
+const macOSRecoveryCoordinationGraceSeconds = 10;
 const TASK_STATE_COMPLETE = 'Complete';
 const TASK_STATE_FAILED = 'Failed';
 const TASK_STATE_WAITING = 'Waiting';
@@ -1485,7 +1491,7 @@ exit_if_bd_no_update() {
 }
 
 wait_for_bd_wrapper_ready() {
-  local deadline="$((SECONDS + 180))"
+  local deadline="$((SECONDS + ${macOSRecoveryTimeoutSeconds} + ${macOSRecoveryCoordinationGraceSeconds}))"
   local previous_mismatch=""
 
   [[ "$bd_expected" = "1" ]] || return 0
@@ -1691,7 +1697,9 @@ exit_if_bd_recovery_disabled() {
 
 wait_for_legacy_host_replacement() {
   local final_asar="$(target_asar_path)"
-  local deadline="$((SECONDS + 180))"
+  local wait_seconds=${macOSRecoveryTimeoutSeconds}
+  [[ "$bd_expected" = "1" ]] && wait_seconds="$((wait_seconds + ${macOSRecoveryCoordinationGraceSeconds}))"
+  local deadline="$((SECONDS + wait_seconds))"
   local target_version=""
   local seen_stock=0
 
@@ -1725,7 +1733,7 @@ wait_for_legacy_host_replacement() {
 wait_for_guard_replacement() {
   local final_asar="$(target_asar_path)"
   local wait_seconds=30
-  [[ "$bd_expected" = "1" ]] && wait_seconds=180
+  [[ "$bd_expected" = "1" ]] && wait_seconds="$((${macOSRecoveryTimeoutSeconds} + ${macOSRecoveryCoordinationGraceSeconds}))"
   local deadline="$((SECONDS + wait_seconds))"
   local target_version=""
 

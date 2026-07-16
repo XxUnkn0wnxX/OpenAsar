@@ -171,6 +171,10 @@ describe('macOS post-update helper ownership', () => {
     assert.match(helperSource, /json_number_value openAsarSourceProcessPid "\$bd_result_path"/);
     assert.match(helperSource, /result_armed_epoch < openasar_armed_epoch/);
     assert.match(helperSource, /expected_recovery_run_id.*recovery_run_id/);
+    assert.match(helperSource, /local deadline="\$\(\(SECONDS \+ 90 \+ 10\)\)"/);
+    assert.match(helperSource, /local wait_seconds=90\n  \[\[ "\$bd_expected" = "1" \]\] && wait_seconds="\$\(\(wait_seconds \+ 10\)\)"/);
+    assert.match(helperSource, /local wait_seconds=30\n  \[\[ "\$bd_expected" = "1" \]\] && wait_seconds="\$\(\(90 \+ 10\)\)"/);
+    assert.match(helperSource, /local wait_seconds=30/);
     const indexSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.js'), 'utf8');
     assert.match(indexSource, /app\.prependListener\('before-quit'/);
     assert.match(indexSource, /app\.prependListener\('will-quit'/);

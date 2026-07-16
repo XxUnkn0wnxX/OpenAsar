@@ -1,12 +1,12 @@
 # Local Build
 
-The GitHub nightly workflow builds OpenAsar by:
+The GitHub nightly workflows build OpenAsar with `scripts/pack.js`, which:
 
-- stamping a `nightly-<commit>` version into `src/index.js`
-- stripping the `src/` tree with `node scripts/strip.js`
-- packing the final archive with `asar pack`
+- copies `src/` into a temporary build tree
+- stamps the requested version and build options into that copy
+- strips and packs the copied tree with `asar`
 
-For local builds, use `scripts/pack.js`, which follows that same flow without modifying your working tree in place.
+Local builds use the same script without modifying the working tree in place.
 
 ## Requirements
 - `node`
@@ -45,6 +45,33 @@ Use this for local testing when you do not want the built `app.asar` to replace 
 node scripts/pack.js --disable-autoupdate --version nightly-$(git rev-parse --short HEAD)-localtest --output tmp/app.asar
 ```
 
+The local wrapper accepts the same optional build arguments:
+
+```bash
+./local-build-no-autoupdate.zsh
+```
+
+## Optional macOS Recovery Timeout
+The macOS post-update helper uses a 90-second recovery window by default. Override that build-time value with a positive integer when a different timeout is needed:
+
+```bash
+node scripts/pack.js --macos-recovery-timeout-seconds 60 --version nightly-$(git rev-parse --short HEAD) --output tmp/app.asar
+```
+
+The equivalent environment variable is:
+
+```bash
+OPENASAR_MACOS_RECOVERY_TIMEOUT_SECONDS=60 node scripts/pack.js --version nightly-$(git rev-parse --short HEAD) --output tmp/app.asar
+```
+
+An explicit command-line value takes precedence over the environment variable. The local no-auto-update wrapper also forwards this option:
+
+```bash
+./local-build-no-autoupdate.zsh --macos-recovery-timeout-seconds 60
+```
+
+This changes only the three long macOS recovery paths. The standalone legacy wait uses the configured window exactly, while the standalone guard keeps its existing 30-second wait. When BetterDiscord is detected, OpenAsar adds a 10-second coordination grace so matching recovery windows do not race. Keep OpenAsar's configured window at least as long as BetterDiscord's; the normal 90-second defaults therefore coordinate for up to 100 seconds. Other updater timers are unchanged.
+
 ## Output
 All commands above produce:
 
@@ -59,6 +86,8 @@ Additional opt-in workflow templates are included for forks:
 
 - `.github/workflows/nightly-disable-autoupdate.yml`
 - `.github/workflows/nightly-custom-update-repo.yml`
+
+Manual workflow runs expose an optional macOS recovery timeout input whose workflow-build default is `60` seconds. Builds made without an explicit workflow or local override keep the normal `90`-second default.
 
 Both templates now mirror the main nightly pipeline structure more closely:
 
