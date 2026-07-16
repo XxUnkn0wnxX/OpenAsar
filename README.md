@@ -11,7 +11,7 @@
 - **:gear: Configurable**: Adds many config options for Discord and OpenAsar enhancements (see config section)
 - **:cloud: Lightweight**: <1% of Discord's original size (9mb -> ~50kb)
 - **:shield: No Tracking**: Removes Discord's built-in tracking for crashes and errors in the asar (not app itself)
-- **:jigsaw: BetterDiscord Compatible**: This fork keeps the OpenAsar settings entry working with [BetterDiscord](https://github.com/BetterDiscord/BetterDiscord) installed
+- **:jigsaw: BetterDiscord Compatible**: Detects the BetterDiscord fork's validated app wrapper, keeps OpenAsar in `Resources/betterdiscord.app.asar`, and retains normal `Resources/app.asar` behavior when no wrapper is present
 - **:package: macOS Bootstrap Safe**: Handles Discord's newer ShipIt host-app bootstrap and legacy macOS host replacements with a temporary helper that can also guard startup/quit handoffs
 
 ### See [FAQ](faq.md) for more details
@@ -20,6 +20,7 @@
 
 ## [Install Guide](https://github.com/GooseMod/OpenAsar/wiki/Install-Guide)
 
+The [Discord install manager](https://github.com/XxUnkn0wnxX/Scripts/blob/develop/shell/discord_install_manager.zsh) integration is macOS-only ([documentation](https://github.com/XxUnkn0wnxX/Scripts/blob/develop/docs/discord-install-manager.md)). Its `--BD` mode requires `--openasar` or `--openasar-source`, preserves a valid BetterDiscord wrapper, and replaces only its nested OpenAsar payload. It falls back to `Resources/app.asar` only when no wrapper is present, refuses partial wrappers, and cannot be combined with `--update`.
 
 ## Local Build
 See [docs/build.md](docs/build.md) for local build instructions, including local test builds with `--disable-autoupdate`.

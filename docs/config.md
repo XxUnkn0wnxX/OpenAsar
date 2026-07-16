@@ -59,7 +59,7 @@ When not set to `false`, OpenAsar enables its DOM optimizer, which delays some a
 
 ### `autoupdate`
 
-Controls OpenAsar's own `app.asar` updater. When not set to `false`, OpenAsar tries to download the latest configured OpenAsar `app.asar` after Discord shows. This is separate from Discord's host/client updater.
+Controls OpenAsar's own ASAR updater. When not set to `false`, OpenAsar tries to download the latest configured OpenAsar build after Discord shows. This is separate from Discord's host/client updater. OpenAsar updates the archive it is currently running from: `Resources/app.asar` normally, or `Resources/betterdiscord.app.asar` when a validated BetterDiscord wrapper owns `Resources/app/`.
 
 ### `css`
 
@@ -71,4 +71,4 @@ Runs custom JavaScript in the main Discord window after DOM ready. If `js` or `c
 
 ### `forceLegacyUpdater`
 
-When set to `true`, OpenAsar forces `USE_NEW_UPDATER` to behave as false, blocks Discord attempts to save it back to `true`, writes top-level `USE_NEW_UPDATER: false` during startup and quit, and uses the legacy updater path where Discord still supports it. On macOS, OpenAsar also arms a short-lived helper during startup/quit so app-bundle replacements can be patched back after Discord hands off to the updater.
+When set to `true`, OpenAsar forces `USE_NEW_UPDATER` to behave as false, blocks Discord attempts to save it back to `true`, writes top-level `USE_NEW_UPDATER: false` during startup and quit, and uses the legacy updater path where Discord still supports it. On macOS, OpenAsar also arms a short-lived helper during startup/quit so app-bundle replacements can be patched back after Discord hands off to the updater. When BetterDiscord recovery is expected, the helper waits for its matching wrapper-ready marker and restores OpenAsar only to the nested payload; otherwise the existing standalone `app.asar` path is unchanged.

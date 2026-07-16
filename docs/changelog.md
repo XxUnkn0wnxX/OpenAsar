@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-16
+
+### BetterDiscord wrapper compatibility
+
+- Added strict BetterDiscord wrapper detection and nested OpenAsar self/host-update recovery.
+- Coordinated macOS bootstrap recovery so OpenAsar waits for BetterDiscord's matching ready marker and never falls back to top-level `app.asar` while that handoff is expected.
+- Documented the [Discord install manager](https://github.com/XxUnkn0wnxX/Scripts/blob/develop/shell/discord_install_manager.zsh) [`--BD` behavior](https://github.com/XxUnkn0wnxX/Scripts/blob/develop/docs/discord-install-manager.md): preserve valid wrappers, fall back to `app.asar` when absent, and reject `--update`.
+
 ## 2026-07-06
 
 ### macOS updater override
