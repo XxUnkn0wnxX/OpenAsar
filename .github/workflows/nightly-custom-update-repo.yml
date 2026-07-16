@@ -11,12 +11,12 @@ on:
     inputs:
       macos_recovery_timeout_seconds:
         description: macOS recovery timeout in seconds
-        default: '60'
+        default: '55'
         type: string
 
 env:
   UPDATE_REPO: 'XxUnkn0wnxX/OpenAsar' # Default fork repo for this checkout.
-  OPENASAR_MACOS_RECOVERY_TIMEOUT_SECONDS: ${{ inputs.macos_recovery_timeout_seconds || '60' }}
+  OPENASAR_MACOS_RECOVERY_TIMEOUT_SECONDS: ${{ inputs.macos_recovery_timeout_seconds || '55' }}
 
 jobs:
   build:
