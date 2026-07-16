@@ -1,5 +1,6 @@
-const { join } = require('path');
+const { basename, dirname, join } = require('path');
 const { app } = require('electron');
+const { detectBetterDiscordWrapper, getOpenAsarArchivePath } = require('./injection');
 
 global.log = (area, ...args) => console.log(`[\x1b[38;2;88;101;242mOpenAsar\x1b[0m > ${area}]`, ...args); // Make log global for easy usage everywhere
 
@@ -11,8 +12,22 @@ global.oaUpdateRepo = stampedUpdateRepo.startsWith('<') ? defaultUpdateRepo : st
 
 log('Init', 'OpenAsar', oaVersion);
 
+global.oaArchivePath = getOpenAsarArchivePath(__filename);
+global.oaHostResourcesPath = dirname(oaArchivePath);
+
 if (process.resourcesPath.startsWith('/usr/lib/electron')) global.systemElectron = true; // Using system electron, flag for other places
-process.resourcesPath = join(__dirname, '..'); // Force resourcesPath for system electron
+process.resourcesPath = oaHostResourcesPath; // Force the real host Resources path for system Electron and wrapped installs
+
+global.oaBetterDiscordWrapper = detectBetterDiscordWrapper(oaHostResourcesPath);
+
+if (oaBetterDiscordWrapper.valid) {
+  log('Init', `Detected BetterDiscord app wrapper; channel=${oaBetterDiscordWrapper.marker.channel} mode=${oaBetterDiscordWrapper.marker.mode} installationId=${oaBetterDiscordWrapper.marker.installationId}`);
+  log('Init', `OpenAsar archive target is BetterDiscord nested payload ${oaBetterDiscordWrapper.nestedTarget}`);
+} else if (basename(oaArchivePath).toLowerCase() === 'betterdiscord.app.asar') {
+  log('Init', `BetterDiscord wrapper validation failed (${oaBetterDiscordWrapper.reason}) while OpenAsar is running from a nested payload; top-level app.asar fallback is disabled`);
+} else {
+  log('Init', `BetterDiscord app wrapper not detected (${oaBetterDiscordWrapper.reason}); standalone app.asar reinjection remains active`);
+}
 
 const paths = require('./paths');
 paths.init();

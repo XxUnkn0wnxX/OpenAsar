@@ -1,6 +1,7 @@
 const { get } = require('https');
 const fs = require('original-fs'); // Use original-fs, not Electron's modified fs
-const { join } = require('path');
+const { basename } = require('path');
+const { getOpenAsarArchivePath } = require('./injection');
 
 // todo: have these https utils centralised?
 const redirs = url => new Promise(res => get(url, r => { // Minimal wrapper around https.get to follow redirects
@@ -29,7 +30,11 @@ module.exports = async () => { // (Try) update asar
     const buf = Buffer.concat(data);
     if (!buf.toString('hex').startsWith('04000000')) return log('AsarUpdate', 'Download error'); // Not like ASAR header
 
-    fs.writeFile(join(__filename, '..'), buf, e => {
+    const archivePath = getOpenAsarArchivePath(__filename);
+    const targetKind = basename(archivePath).toLowerCase() === 'betterdiscord.app.asar' ? 'BetterDiscord nested payload' : 'standalone app.asar';
+
+    log('AsarUpdate', `Writing downloaded OpenAsar to ${targetKind} ${archivePath}`);
+    fs.writeFile(archivePath, buf, e => {
       log('AsarUpdate', 'Downloaded', e ?? '');
       done();
     });
