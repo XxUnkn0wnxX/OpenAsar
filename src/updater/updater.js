@@ -29,6 +29,19 @@ const getCurrentMacOSAppPath = () => {
   return null;
 };
 
+const getMacOSHelperEnvironment = () => {
+  const environment = {
+    PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+    SHELL: '/bin/zsh'
+  };
+
+  for (const key of ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING']) {
+    if (typeof process.env[key] === 'string' && process.env[key].length > 0) environment[key] = process.env[key];
+  }
+
+  return environment;
+};
+
 const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = getCurrentMacOSAppPath(), mode = 'shipit', reason = '') => {
   if (process.platform !== 'darwin') return false;
 
@@ -246,6 +259,7 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
 
   const child = spawn('/usr/bin/env', [
     'zsh',
+    '-f',
     helperPath,
     payloadPath,
     requestPath,
@@ -265,7 +279,8 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
     betterDiscordChannel
   ], {
     detached: true,
-    stdio: 'ignore'
+    stdio: 'ignore',
+    env: getMacOSHelperEnvironment()
   });
 
   if (Number.isInteger(child.pid) && child.pid > 0) {
@@ -712,7 +727,7 @@ class Updater extends require('events').EventEmitter {
   }
 }
 
-const MACOS_POST_SHIPIT_HELPER = `#!/usr/bin/env zsh
+const MACOS_POST_SHIPIT_HELPER = `#!/usr/bin/env -S zsh -f
 set -u
 
 payload_path="$1"
