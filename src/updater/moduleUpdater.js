@@ -92,6 +92,10 @@ exports.init = (endpoint, { releaseChannel, version }) => {
     }
   })() : autoUpdater;
 
+  if (process.platform === 'darwin') {
+    host.on('before-quit-for-update', updater.noteMacOSRestartRequested);
+  }
+
 
   host.on('update-progress', progress => events.emit('downloading-module', { name: 'host', progress }));
 

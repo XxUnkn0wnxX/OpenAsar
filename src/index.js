@@ -85,31 +85,34 @@ const enforceLegacyUpdaterSetting = reason => {
   return true;
 };
 
-if (enforceLegacyUpdaterSetting('startup')) {
-  const armMacOSLegacyUpdaterGuard = reason => {
-    if (process.platform !== 'darwin') return;
-    if (oaConfig.forceLegacyUpdater !== true) return;
+const legacyUpdaterForcedAtStartup = enforceLegacyUpdaterSetting('startup');
+const armMacOSUpdaterGuard = reason => {
+  if (process.platform !== 'darwin') return;
 
-    try {
-      if (require('./updater/updater').prepareMacOSLegacyUpdaterGuard(reason)) {
-        log('Init', `Armed macOS legacy updater OpenAsar guard (${reason})`);
-      } else {
-        log('Init', `Skipped macOS legacy updater OpenAsar guard (${reason}); no pending updater handoff`);
-      }
-    } catch (e) {
-      log('Init', `Failed to arm macOS legacy updater OpenAsar guard (${reason})`, e);
+  try {
+    if (require('./updater/updater').prepareMacOSLegacyUpdaterGuard(reason)) {
+      log('Init', `Armed macOS updater OpenAsar guard (${reason})`);
+    } else {
+      log('Init', `Skipped macOS updater OpenAsar guard (${reason}); no pending updater handoff`);
     }
-  };
+  } catch (e) {
+    log('Init', `Failed to arm macOS updater OpenAsar guard (${reason})`, e);
+  }
+};
 
-  armMacOSLegacyUpdaterGuard('startup');
-  app.on('before-quit', () => {
+if (process.platform === 'darwin') {
+  armMacOSUpdaterGuard('startup');
+  app.prependListener('before-quit', () => {
     enforceLegacyUpdaterSetting('before-quit');
-    armMacOSLegacyUpdaterGuard('before-quit');
+    armMacOSUpdaterGuard('before-quit');
   });
-  app.on('will-quit', () => {
+  app.prependListener('will-quit', () => {
     enforceLegacyUpdaterSetting('will-quit');
-    armMacOSLegacyUpdaterGuard('will-quit');
+    armMacOSUpdaterGuard('will-quit');
   });
+} else if (legacyUpdaterForcedAtStartup) {
+  app.on('before-quit', () => enforceLegacyUpdaterSetting('before-quit'));
+  app.on('will-quit', () => enforceLegacyUpdaterSetting('will-quit'));
 }
 
 require('./cmdSwitches')();

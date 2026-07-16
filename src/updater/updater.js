@@ -1,4 +1,5 @@
 const { spawn, execSync } = require('child_process');
+const { randomUUID } = require('crypto');
 const { app } = require('electron');
 const fs = require('fs');
 const Module = require('module');
@@ -10,6 +11,8 @@ const { detectBetterDiscordWrapper, getOpenAsarArchivePath } = require('../injec
 
 let instance;
 let currentVersion;
+let macOSRestartRequestedAt = 0;
+const restartIntentWindowMs = 5000;
 const TASK_STATE_COMPLETE = 'Complete';
 const TASK_STATE_FAILED = 'Failed';
 const TASK_STATE_WAITING = 'Waiting';
@@ -29,6 +32,13 @@ const getCurrentMacOSAppPath = () => {
   return null;
 };
 
+const noteMacOSRestartRequested = () => {
+  macOSRestartRequestedAt = Date.now();
+};
+
+const macOSRestartRecentlyRequested = () => macOSRestartRequestedAt > 0
+  && Date.now() - macOSRestartRequestedAt <= restartIntentWindowMs;
+
 const getMacOSHelperEnvironment = () => {
   const environment = {
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
@@ -42,7 +52,7 @@ const getMacOSHelperEnvironment = () => {
   return environment;
 };
 
-const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = getCurrentMacOSAppPath(), mode = 'shipit', reason = '') => {
+const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = getCurrentMacOSAppPath(), mode = 'shipit', reason = '', restartRequested = false) => {
   if (process.platform !== 'darwin') return false;
 
   targetAppPath = targetAppPath ? resolve(targetAppPath) : targetAppPath;
@@ -51,17 +61,21 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
   const userData = paths.getUserData();
   const bootstrapDir = join(userData, 'openasar-bootstrap');
   const helperPath = join(bootstrapDir, 'post-shipit-helper.zsh');
-  const payloadPath = join(bootstrapDir, 'app.asar');
+  const recoveryRunsDir = join(bootstrapDir, 'recovery-runs');
   const statePath = join(bootstrapDir, 'post-shipit-state.json');
   const logPath = join(bootstrapDir, 'post-shipit-helper.log');
   const consoleLogPath = join(bootstrapDir, 'post-shipit-console.log');
   const armLogPath = join(bootstrapDir, 'post-shipit-arm.log');
   const pidPath = join(bootstrapDir, 'post-shipit-helper.pid');
   const pendingPath = join(bootstrapDir, 'post-shipit-update-pending.json');
+  const preparationLockPath = join(bootstrapDir, '.helper-preparation-lock');
   const requestPath = join(userData, 'ShipIt_request.json');
   const currentAsar = getCurrentOpenAsarPath();
   const nestedArchiveExpected = basename(currentAsar) === 'betterdiscord.app.asar';
   let armedAt = new Date().toISOString();
+  let handoffId = randomUUID();
+  let payloadPath = '';
+  const sourceProcessPid = process.pid;
   const betterDiscordWrapper = detectBetterDiscordWrapper(getHostResourcesPath());
   const betterDiscordExpected = betterDiscordWrapper.valid;
   const betterDiscordChannel = betterDiscordExpected ? betterDiscordWrapper.marker.channel : '';
@@ -69,6 +83,8 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
   const nestedTarget = targetAppPath ? join(targetAppPath, 'Contents', 'Resources', 'betterdiscord.app.asar') : '';
   const betterDiscordReadyPath = join(userData, 'betterdiscord-bootstrap', 'wrapper-ready.json');
   const betterDiscordResultPath = join(userData, 'betterdiscord-bootstrap', 'wrapper-result.json');
+  const betterDiscordStatePath = join(userData, 'betterdiscord-bootstrap', 'update-pending.json');
+  const betterDiscordActiveRunPath = join(userData, 'betterdiscord-bootstrap', 'active-run');
   const stoppedExistingPids = [];
   const readPendingMarker = () => {
     try {
@@ -88,49 +104,88 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
       return false;
     }
   };
+  const writePendingMarker = marker => {
+    const temporary = `${pendingPath}.${process.pid}.tmp`;
+    ofs.writeFileSync(temporary, JSON.stringify(marker, null, 2));
+    ofs.renameSync(temporary, pendingPath);
+  };
+  const readCurrentBetterDiscordRecoveryRunId = () => {
+    if (!betterDiscordExpected) return '';
+    try {
+      const stateStat = ofs.lstatSync(betterDiscordStatePath);
+      const activeRunStat = ofs.lstatSync(betterDiscordActiveRunPath);
+      if (stateStat.isSymbolicLink() || !stateStat.isFile() || activeRunStat.isSymbolicLink() || !activeRunStat.isFile()) return '';
+      const state = JSON.parse(ofs.readFileSync(betterDiscordStatePath, 'utf8'));
+      const activeRunId = ofs.readFileSync(betterDiscordActiveRunPath, 'utf8').trim();
+      return state?.pending === true
+        && state.sourceProcessPid === sourceProcessPid
+        && state.installationId === installationId
+        && state.targetAppPath === targetAppPath
+        && state.nestedTarget === nestedTarget
+        && typeof state.runId === 'string'
+        && state.runId.length > 0
+        && state.runId === activeRunId
+        ? state.runId
+        : '';
+    } catch (_) {
+      return '';
+    }
+  };
 
-  if (mode === 'guard' && betterDiscordExpected) {
+  if (mode === 'guard') {
     const pending = readPendingMarker();
     if (pending?.pending === true
-      && pending.betterDiscordExpected === true
-      && pending.installationId === installationId
-      && pending.appPath === targetAppPath
-      && pending.nestedTarget === nestedTarget
+      && pending.sourceProcessPid === sourceProcessPid
+      && typeof pending.handoffId === 'string'
+      && pending.handoffId.length > 0
+      && pending.targetAppPath === targetAppPath
+      && pending.betterDiscordExpected === betterDiscordExpected
+      && (!betterDiscordExpected || (pending.installationId === installationId
+        && pending.appPath === targetAppPath
+        && pending.nestedTarget === nestedTarget))
       && !Number.isNaN(Date.parse(pending.armedAt))) {
       armedAt = pending.armedAt;
+      handoffId = pending.handoffId;
     }
   }
+  payloadPath = join(recoveryRunsDir, handoffId, 'app.asar');
 
-  const pendingIdentity = betterDiscordExpected ? {
-    betterDiscordExpected: true,
-    schema: 1,
-    owner: 'betterdiscord',
-    style: 'app-wrapper',
-    channel: betterDiscordChannel,
-    installationId,
-    appPath: targetAppPath,
-    nestedTarget,
+  const betterDiscordRecoveryRunId = readCurrentBetterDiscordRecoveryRunId();
+  const pendingIdentity = {
+    handoffId,
+    sourceProcessPid,
+    restartRequested: restartRequested === true,
+    betterDiscordExpected,
     armedAt,
     helperPath,
-    helperPidPath: pidPath
-  } : {
-    betterDiscordExpected: false
+    helperPidPath: pidPath,
+    ...(betterDiscordRecoveryRunId ? { betterDiscordRecoveryRunId } : {}),
+    ...(betterDiscordExpected ? {
+      schema: 1,
+      owner: 'betterdiscord',
+      style: 'app-wrapper',
+      channel: betterDiscordChannel,
+      installationId,
+      appPath: targetAppPath,
+      nestedTarget
+    } : {})
   };
   const writeInactivePendingMarker = reason => {
     try {
-      ofs.writeFileSync(pendingPath, JSON.stringify({
+      writePendingMarker({
         pending: false,
         updatedAt: new Date().toISOString(),
         reason,
         targetAppPath,
         ...pendingIdentity
-      }, null, 2));
+      });
     } catch (_) {}
   };
   const ensurePendingMarker = () => {
-    if (mode === 'shipit' || mode === 'legacy') {
+    const quitGuard = mode === 'guard' && (reason === 'before-quit' || reason === 'will-quit');
+    if (mode === 'shipit' || mode === 'legacy' || quitGuard) {
       try {
-        ofs.writeFileSync(pendingPath, JSON.stringify({
+        writePendingMarker({
           pending: true,
           createdAt: new Date().toISOString(),
           mode,
@@ -138,8 +193,13 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
           stagedAppPath,
           targetAppPath,
           ...pendingIdentity
-        }, null, 2));
+        });
       } catch (_) {}
+      return;
+    }
+
+    if (mode === 'guard' && reason === 'startup') {
+      writeInactivePendingMarker('startup-passive');
       return;
     }
 
@@ -159,6 +219,44 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
   const appendArmLog = message => {
     try {
       ofs.appendFileSync(armLogPath, `[${new Date().toString()}] ${message}\n`);
+    } catch (_) {}
+  };
+  const acquirePreparationLock = () => {
+    const waiter = new Int32Array(new SharedArrayBuffer(4));
+    for (let attempt = 0; attempt < 60; attempt++) {
+      try {
+        ofs.mkdirSync(preparationLockPath);
+        ofs.writeFileSync(join(preparationLockPath, 'owner.json'), JSON.stringify({ handoffId, sourceProcessPid }));
+        return true;
+      } catch (error) {
+        if (error?.code !== 'EEXIST') throw error;
+      }
+
+      let ownerPid = 0;
+      try {
+        ownerPid = JSON.parse(ofs.readFileSync(join(preparationLockPath, 'owner.json'), 'utf8')).sourceProcessPid;
+      } catch (_) {}
+      let ownerIsLive = false;
+      if (Number.isInteger(ownerPid) && ownerPid > 0) {
+        try {
+          process.kill(ownerPid, 0);
+          ownerIsLive = true;
+        } catch (_) {}
+      }
+      if (!ownerIsLive) {
+        try { ofs.rmSync(preparationLockPath, { recursive: true, force: true }); } catch (_) {}
+        continue;
+      }
+      Atomics.wait(waiter, 0, 0, 50);
+    }
+    return false;
+  };
+  const releasePreparationLock = () => {
+    try {
+      const owner = JSON.parse(ofs.readFileSync(join(preparationLockPath, 'owner.json'), 'utf8'));
+      if (owner.handoffId === handoffId && owner.sourceProcessPid === sourceProcessPid) {
+        ofs.rmSync(preparationLockPath, { recursive: true, force: true });
+      }
     } catch (_) {}
   };
   const readHelperPidFile = () => {
@@ -204,12 +302,13 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
     }
     return helpers;
   };
-  const helperMatchesPendingIdentity = (helper, pending) => {
+  const pendingMatchesLocalGeneration = pending => {
     if (pending?.pending !== true
-      || pending.helperPid !== helper.pid
+      || pending.targetAppPath !== targetAppPath
+      || pending.handoffId !== handoffId
+      || pending.sourceProcessPid !== sourceProcessPid
       || pending.helperPath !== helperPath
       || pending.helperPidPath !== pidPath
-      || pending.targetAppPath !== targetAppPath
       || pending.betterDiscordExpected !== betterDiscordExpected) {
       return false;
     }
@@ -221,6 +320,11 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
         || pending.nestedTarget !== nestedTarget)) {
       return false;
     }
+
+    return true;
+  };
+  const helperMatchesPendingIdentity = (helper, pending) => {
+    if (!pendingMatchesLocalGeneration(pending) || pending.helperPid !== helper.pid) return false;
 
     if (mode !== 'guard' && pending.mode !== mode) return false;
     if (mode === 'shipit' && pending.stagedAppPath !== stagedAppPath) return false;
@@ -260,6 +364,7 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
   };
   const guardHasPendingUpdate = () => {
     if (mode !== 'guard') return true;
+    if (reason === 'startup') return false;
 
     let markerStat;
     try {
@@ -277,6 +382,7 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
     try {
       const marker = JSON.parse(ofs.readFileSync(pendingPath, 'utf8'));
       if (marker.pending !== true) return false;
+      if (!pendingMatchesLocalGeneration(marker)) return false;
       if (marker.targetAppPath && targetAppPath && marker.targetAppPath !== targetAppPath) {
         writeInactivePendingMarker('target-mismatch');
         return false;
@@ -290,135 +396,157 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
   };
 
   ofs.mkdirSync(bootstrapDir, { recursive: true });
-
-  for (const file of [
-    'openasar-bootstrap-app.asar',
-    'openasar-post-shipit-helper.js',
-    'openasar-post-shipit-helper.zsh',
-    'openasar-post-shipit-state.json',
-    'openasar-post-shipit-helper.log',
-    'openasar-post-shipit-console.log',
-    'openasar-post-shipit-helper.pid'
-  ]) {
-    try {
-      ofs.unlinkSync(join(userData, file));
-    } catch (_) {}
-  }
-
-  const existingHelpers = listExistingHelpers();
-  const pidFileOwner = readHelperPidFile();
-  const pendingOwner = readPendingMarker();
-  const matchingHelper = existingHelpers.length === 1
-    && pidFileOwner.trusted
-    && pidFileOwner.pid > 0
-    && pendingOwner?.helperPid === pidFileOwner.pid
-    && pendingMarkerIsFresh()
-    && helperMatchesPendingIdentity(existingHelpers[0], pendingOwner)
-    ? existingHelpers[0]
-    : null;
-  if (matchingHelper != null) {
-    appendArmLog(`Preserved live OpenAsar helper pid=${matchingHelper.pid} mode=${pendingOwner.mode || 'unknown'} for mode=${mode} reason=${reason || 'unspecified'}`);
-    return true;
-  }
-
-  try {
-    stopExistingHelpers(existingHelpers);
-  } catch (_) {}
-  for (const file of [ logPath, consoleLogPath ]) {
-    try {
-      ofs.writeFileSync(file, '');
-    } catch (_) {}
-  }
-  try {
-    ofs.unlinkSync(pidPath);
-  } catch (_) {}
-  if (stoppedExistingPids.length > 0) appendBootstrapLog(`Stopped existing OpenAsar helper pids=${stoppedExistingPids.join(',')}`);
-
-  if (nestedArchiveExpected && !betterDiscordExpected) {
-    const message = `Refused OpenAsar helper preparation: running from betterdiscord.app.asar but BetterDiscord wrapper validation failed (${betterDiscordWrapper.reason})`;
-    appendBootstrapLog(message);
-    throw new Error(message);
-  }
-
-  ofs.copyFileSync(currentAsar, payloadPath);
-  appendBootstrapLog(`Prepared OpenAsar helper; mode=${mode} reason=${reason || 'unspecified'} staged=${stagedAppPath || '(none)'} target=${targetAppPath || '(unknown)'} payload=${payloadPath}`);
-  if (betterDiscordExpected) {
-    appendBootstrapLog(`Detected BetterDiscord wrapper; installationId=${installationId} waitingFor=${betterDiscordReadyPath} noUpdateResult=${betterDiscordResultPath} nestedTarget=${nestedTarget}`);
-    log('Updater', `OpenAsar recovery will wait for BetterDiscord wrapper installationId=${installationId} before writing ${nestedTarget}`);
-  } else {
-    appendBootstrapLog(`BetterDiscord wrapper not detected (${betterDiscordWrapper.reason}); retaining standalone app.asar recovery path`);
-    log('Updater', 'OpenAsar recovery is using the standalone app.asar path');
-  }
-  ensurePendingMarker();
-
-  ofs.writeFileSync(helperPath, MACOS_POST_SHIPIT_HELPER);
-  ofs.writeFileSync(statePath, JSON.stringify({
-    bootstrapDir,
-    payloadPath,
-    requestPath,
-    stagedAppPath,
-    targetAppPath,
-    mode,
-    reason,
-    helperPath,
-    logPath,
-    consoleLogPath,
-    armLogPath,
-    pidPath,
-    pendingPath,
-    betterDiscordExpected,
-    betterDiscordChannel,
-    installationId,
-    nestedTarget,
-    betterDiscordReadyPath,
-    betterDiscordResultPath,
-    armedAt
-  }));
-  ofs.chmodSync(helperPath, 0o755);
-
-  if (!guardHasPendingUpdate()) {
-    appendBootstrapLog(`Skipped OpenAsar helper start; no pending updater handoff for mode=${mode}`);
+  if (!acquirePreparationLock()) {
+    appendArmLog(`Skipped OpenAsar helper preparation; another process owns ${preparationLockPath}`);
     return false;
   }
 
-  const child = spawn('/usr/bin/env', [
-    'zsh',
-    '-f',
-    helperPath,
-    payloadPath,
-    requestPath,
-    stagedAppPath ?? '',
-    targetAppPath ?? '',
-    logPath,
-    consoleLogPath,
-    pidPath,
-    mode,
-    reason,
-    pendingPath,
-    betterDiscordExpected ? '1' : '0',
-    installationId,
-    betterDiscordReadyPath,
-    armedAt,
-    nestedTarget,
-    betterDiscordChannel
-  ], {
-    detached: true,
-    stdio: 'ignore',
-    env: getMacOSHelperEnvironment()
-  });
+  try {
+    for (const file of [
+      'openasar-bootstrap-app.asar',
+      'openasar-post-shipit-helper.js',
+      'openasar-post-shipit-helper.zsh',
+      'openasar-post-shipit-state.json',
+      'openasar-post-shipit-helper.log',
+      'openasar-post-shipit-console.log',
+      'openasar-post-shipit-helper.pid'
+    ]) {
+      try {
+        ofs.unlinkSync(join(userData, file));
+      } catch (_) {}
+    }
 
-  if (Number.isInteger(child.pid) && child.pid > 0) {
+    const existingHelpers = listExistingHelpers();
+    const pidFileOwner = readHelperPidFile();
+    const pendingOwner = readPendingMarker();
+    const matchingHelper = existingHelpers.length === 1
+      && pidFileOwner.trusted
+      && pidFileOwner.pid > 0
+      && pendingOwner?.helperPid === pidFileOwner.pid
+      && pendingMarkerIsFresh()
+      && helperMatchesPendingIdentity(existingHelpers[0], pendingOwner)
+      ? existingHelpers[0]
+      : null;
+    if (matchingHelper != null) {
+      if (mode === 'guard') {
+        try {
+          writePendingMarker({
+            ...pendingOwner,
+            restartRequested: pendingOwner.restartRequested === true || restartRequested === true,
+            ...(betterDiscordRecoveryRunId ? { betterDiscordRecoveryRunId } : {}),
+            updatedAt: new Date().toISOString()
+          });
+        } catch (_) {}
+      }
+      appendArmLog(`Preserved live OpenAsar helper pid=${matchingHelper.pid} mode=${pendingOwner.mode || 'unknown'} for mode=${mode} reason=${reason || 'unspecified'}`);
+      return true;
+    }
+
     try {
-      const temporaryPidPath = `${pidPath}.${process.pid}.tmp`;
-      ofs.writeFileSync(temporaryPidPath, `${child.pid}\n`, { mode: 0o600 });
-      ofs.renameSync(temporaryPidPath, pidPath);
-    } catch (error) {
-      appendBootstrapLog(`Could not record OpenAsar helper PID: ${String(error)}`);
+      stopExistingHelpers(existingHelpers);
+    } catch (_) {}
+    for (const file of [ logPath, consoleLogPath ]) {
+      try {
+        ofs.writeFileSync(file, '');
+      } catch (_) {}
     }
     try {
-      const pending = JSON.parse(ofs.readFileSync(pendingPath, 'utf8'));
-      if (pending.pending === true) {
-        const temporaryPendingPath = `${pendingPath}.${process.pid}.tmp`;
+      ofs.unlinkSync(pidPath);
+    } catch (_) {}
+    if (stoppedExistingPids.length > 0) appendBootstrapLog(`Stopped existing OpenAsar helper pids=${stoppedExistingPids.join(',')}`);
+
+    if (nestedArchiveExpected && !betterDiscordExpected) {
+      const message = `Refused OpenAsar helper preparation: running from betterdiscord.app.asar but BetterDiscord wrapper validation failed (${betterDiscordWrapper.reason})`;
+      appendBootstrapLog(message);
+      throw new Error(message);
+    }
+
+    ofs.mkdirSync(dirname(payloadPath), { recursive: true });
+    ofs.copyFileSync(currentAsar, payloadPath);
+    appendBootstrapLog(`Prepared OpenAsar helper; mode=${mode} reason=${reason || 'unspecified'} staged=${stagedAppPath || '(none)'} target=${targetAppPath || '(unknown)'} payload=${payloadPath}`);
+    if (betterDiscordExpected) {
+      appendBootstrapLog(`Detected BetterDiscord wrapper; installationId=${installationId} waitingFor=${betterDiscordReadyPath} noUpdateResult=${betterDiscordResultPath} nestedTarget=${nestedTarget}`);
+      log('Updater', `OpenAsar recovery will wait for BetterDiscord wrapper installationId=${installationId} before writing ${nestedTarget}`);
+    } else {
+      appendBootstrapLog(`BetterDiscord wrapper not detected (${betterDiscordWrapper.reason}); retaining standalone app.asar recovery path`);
+      log('Updater', 'OpenAsar recovery is using the standalone app.asar path');
+    }
+    ensurePendingMarker();
+
+    ofs.writeFileSync(helperPath, MACOS_POST_SHIPIT_HELPER);
+    ofs.writeFileSync(statePath, JSON.stringify({
+      bootstrapDir,
+      payloadPath,
+      requestPath,
+      stagedAppPath,
+      targetAppPath,
+      mode,
+      reason,
+      helperPath,
+      logPath,
+      consoleLogPath,
+      armLogPath,
+      pidPath,
+      pendingPath,
+      betterDiscordExpected,
+      betterDiscordChannel,
+      installationId,
+      nestedTarget,
+      betterDiscordReadyPath,
+      betterDiscordResultPath,
+      betterDiscordRecoveryRunId,
+      armedAt,
+      handoffId,
+      sourceProcessPid,
+      restartRequested: restartRequested === true
+    }));
+    ofs.chmodSync(helperPath, 0o755);
+
+    if (!guardHasPendingUpdate()) {
+      try {
+        ofs.rmSync(dirname(payloadPath), { recursive: true, force: true });
+      } catch (_) {}
+      appendBootstrapLog(`Skipped OpenAsar helper start; no pending updater handoff for mode=${mode}`);
+      return false;
+    }
+
+    const child = spawn('/usr/bin/env', [
+      'zsh',
+      '-f',
+      helperPath,
+      payloadPath,
+      requestPath,
+      stagedAppPath ?? '',
+      targetAppPath ?? '',
+      logPath,
+      consoleLogPath,
+      pidPath,
+      mode,
+      reason,
+      pendingPath,
+      betterDiscordExpected ? '1' : '0',
+      installationId,
+      betterDiscordReadyPath,
+      armedAt,
+      nestedTarget,
+      betterDiscordChannel,
+      handoffId,
+      String(sourceProcessPid)
+    ], {
+      detached: true,
+      stdio: 'ignore',
+      env: getMacOSHelperEnvironment()
+    });
+
+    let helperPublished = false;
+    if (Number.isInteger(child.pid) && child.pid > 0) {
+      const temporaryPidPath = `${pidPath}.${process.pid}.${handoffId}.tmp`;
+      const temporaryPendingPath = `${pendingPath}.${process.pid}.${handoffId}.tmp`;
+      try {
+        const pending = readPendingMarker();
+        if (!pendingMatchesLocalGeneration(pending) || pending.mode !== mode) throw new Error('pending generation changed before helper publication');
+
+        ofs.writeFileSync(temporaryPidPath, `${child.pid}\n`, { mode: 0o600 });
         ofs.writeFileSync(temporaryPendingPath, JSON.stringify({
           ...pending,
           helperPid: child.pid,
@@ -426,19 +554,47 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
           helperPidPath: pidPath,
           helperStartedAt: new Date().toISOString()
         }, null, 2));
-        ofs.renameSync(temporaryPendingPath, pendingPath);
-      }
-    } catch (error) {
-      appendBootstrapLog(`Could not record OpenAsar helper identity: ${String(error)}`);
-    }
-  }
 
-  appendBootstrapLog(`Started OpenAsar helper pid=${child.pid} mode=${mode} reason=${reason || 'unspecified'}`);
-  child.unref();
-  return true;
+        const beforePublish = readPendingMarker();
+        if (!pendingMatchesLocalGeneration(beforePublish) || beforePublish.mode !== mode) throw new Error('pending generation changed during helper publication');
+        ofs.renameSync(temporaryPendingPath, pendingPath);
+
+        const publishedMarker = readPendingMarker();
+        if (!pendingMatchesLocalGeneration(publishedMarker) || publishedMarker.helperPid !== child.pid) throw new Error('helper marker publication lost ownership');
+        ofs.renameSync(temporaryPidPath, pidPath);
+
+        const confirmedMarker = readPendingMarker();
+        const confirmedPid = readHelperPidFile();
+        helperPublished = pendingMatchesLocalGeneration(confirmedMarker)
+          && confirmedMarker.helperPid === child.pid
+          && confirmedPid.trusted
+          && confirmedPid.pid === child.pid;
+        if (!helperPublished) throw new Error('helper identity changed after publication');
+      } catch (error) {
+        appendBootstrapLog(`Could not publish OpenAsar helper ownership: ${String(error)}`);
+      } finally {
+        try { ofs.unlinkSync(temporaryPidPath); } catch (_) {}
+        try { ofs.unlinkSync(temporaryPendingPath); } catch (_) {}
+      }
+    }
+
+    if (!helperPublished) {
+      try { process.kill(-child.pid, 'SIGTERM'); } catch (_) {}
+      try { child.unref(); } catch (_) {}
+      try { ofs.rmSync(dirname(payloadPath), { recursive: true, force: true }); } catch (_) {}
+      appendBootstrapLog(`OpenAsar helper was not published for handoffId=${handoffId}; stopped local helper without touching a newer generation`);
+      return false;
+    }
+
+    appendBootstrapLog(`Started OpenAsar helper pid=${child.pid} mode=${mode} reason=${reason || 'unspecified'}`);
+    child.unref();
+    return true;
+  } finally {
+    releasePreparationLock();
+  }
 };
 
-const prepareMacOSLegacyUpdaterGuard = reason => prepareMacOSPostHostUpdateHelper('', getCurrentMacOSAppPath(), 'guard', reason);
+const prepareMacOSLegacyUpdaterGuard = (reason, restartRequested = macOSRestartRecentlyRequested()) => prepareMacOSPostHostUpdateHelper('', getCurrentMacOSAppPath(), 'guard', reason, restartRequested);
 
 class Updater extends require('events').EventEmitter {
   constructor(options) {
@@ -674,6 +830,7 @@ class Updater extends require('events').EventEmitter {
       }
 
       log('Updater', 'Restarting', next);
+      if (isMacOS) noteMacOSRestartRequested();
       return app.quit();
     }
 
@@ -861,6 +1018,8 @@ class Updater extends require('events').EventEmitter {
 const MACOS_POST_SHIPIT_HELPER = `#!/usr/bin/env -S zsh -f
 set -u
 
+helper_script_path="$0"
+
 payload_path="$1"
 request_path="$2"
 staged_app_path="$3"
@@ -877,6 +1036,10 @@ bd_ready_path="\${13:-}"
 bd_armed_at="\${14:-}"
 bd_nested_target="\${15:-}"
 bd_channel="\${16:-}"
+handoff_id="\${17:-}"
+source_process_pid="\${18:-0}"
+payload_run_path="$(/usr/bin/dirname "$payload_path")"
+expected_payload_run_path="$(/usr/bin/dirname "$pending_path")/recovery-runs/$handoff_id"
 bd_result_path=""
 [[ -n "$bd_ready_path" ]] && bd_result_path="$(/usr/bin/dirname "$bd_ready_path")/wrapper-result.json"
 bd_disabled_path=""
@@ -884,6 +1047,42 @@ bd_disabled_path=""
 bd_last_mismatch=""
 bundle_id=""
 saw_shipit=0
+
+owns_current_handoff() {
+  local marker_handoff_id="$(json_string_value handoffId "$pending_path" || true)"
+  local marker_source_process_pid="$(json_number_value sourceProcessPid "$pending_path" || true)"
+  local marker_helper_pid="$(json_number_value helperPid "$pending_path" || true)"
+  local marker_helper_path="$(json_string_value helperPath "$pending_path" || true)"
+  local marker_pid_path="$(json_string_value helperPidPath "$pending_path" || true)"
+  local recorded_pid="$(/bin/cat "$pid_path" 2>/dev/null || true)"
+
+  json_bool_true pending "$pending_path" || return 1
+  [[ -n "$handoff_id" && "$marker_handoff_id" = "$handoff_id" ]] || return 1
+  [[ "$source_process_pid" = <-> && "$source_process_pid" -gt 0 && "$marker_source_process_pid" = "$source_process_pid" ]] || return 1
+  [[ "$marker_helper_pid" = "$$" && "$recorded_pid" = "$$" ]] || return 1
+  [[ "$marker_helper_path" = "$helper_script_path" && "$marker_pid_path" = "$pid_path" ]] || return 1
+  return 0
+}
+
+exit_if_superseded() {
+  owns_current_handoff && return 0
+  log "A newer OpenAsar handoff superseded this helper; exiting without shared-state changes"
+  exit 0
+}
+
+wait_for_current_handoff() {
+  local attempt=""
+  for attempt in {1..40}; do
+    owns_current_handoff && return 0
+    /bin/sleep 0.05
+  done
+  return 1
+}
+
+restart_is_requested() {
+  owns_current_handoff || return 1
+  json_bool_true restartRequested "$pending_path"
+}
 
 cleanup_pid_file() {
   local current_pid=""
@@ -917,14 +1116,17 @@ terminate_helper() {
   signal_helper_descendants TERM
   /bin/sleep 0.1
   signal_helper_descendants KILL
+  remove_own_payload_run
   cleanup_pid_file
   exit "$exit_status"
 }
 
-/bin/mkdir -p "$(/usr/bin/dirname "$pid_path")" 2>/dev/null || true
-pid_temporary="$pid_path.$$.tmp"
-print -r -- "$$" > "$pid_temporary" 2>/dev/null && /bin/mv -f "$pid_temporary" "$pid_path" 2>/dev/null || true
-trap cleanup_pid_file EXIT
+cleanup_helper() {
+  remove_own_payload_run
+  cleanup_pid_file
+}
+
+trap cleanup_helper EXIT
 trap 'terminate_helper 130' INT
 trap 'terminate_helper 143' TERM
 
@@ -1033,11 +1235,13 @@ kill_discord_from_target() {
   local pids
   local pid
 
+  exit_if_superseded
   [[ -n "$target_app_path" ]] || return 0
   final_exe_dir="$target_app_path/Contents/MacOS"
   pids="$(/usr/bin/pgrep -f "$final_exe_dir" 2>/dev/null || true)"
 
   print -r -- "$pids" | while IFS= read -r pid; do
+    exit_if_superseded
     [[ -n "$pid" ]] || continue
     [[ "$pid" = "$$" ]] && continue
     /bin/kill "-$signal" "$pid" 2>> "$log_path" && log "Sent $signal to early Discord launch pid $pid" || true
@@ -1052,6 +1256,7 @@ wait_for_stable_asar() {
   local size
 
   while (( stable_ticks < 3 && SECONDS < deadline )); do
+    exit_if_superseded
     if [[ ! -f "$final_asar" ]]; then
       stable_ticks=0
       sleep 0.25
@@ -1156,9 +1361,15 @@ bd_ready_marker_valid() {
   local app_path=""
   local ready_target_app_path=""
   local nested_target=""
+  local recovery_run_id=""
+  local marker_handoff_id=""
+  local marker_source_process_pid=""
+  local expected_recovery_run_id=""
+  local recovery_armed_at=""
   local ready_at=""
   local ready_epoch=""
-  local armed_epoch=""
+  local recovery_armed_epoch=""
+  local openasar_armed_epoch=""
 
   [[ -f "$bd_ready_path" ]] || set_bd_mismatch "BetterDiscord wrapper-ready marker not available at $bd_ready_path" || return 1
 
@@ -1170,6 +1381,11 @@ bd_ready_marker_valid() {
   app_path="$(json_string_value appPath "$bd_ready_path" || true)"
   ready_target_app_path="$(json_string_value targetAppPath "$bd_ready_path" || true)"
   nested_target="$(json_string_value nestedTarget "$bd_ready_path" || true)"
+  recovery_run_id="$(json_string_value recoveryRunId "$bd_ready_path" || true)"
+  marker_handoff_id="$(json_string_value openAsarHandoffId "$bd_ready_path" || true)"
+  marker_source_process_pid="$(json_number_value openAsarSourceProcessPid "$bd_ready_path" || true)"
+  expected_recovery_run_id="$(json_string_value betterDiscordRecoveryRunId "$pending_path" || true)"
+  recovery_armed_at="$(json_string_value armedAt "$bd_ready_path" || true)"
   ready_at="$(json_string_value readyAt "$bd_ready_path" || true)"
 
   [[ "$schema" = "1" ]] || set_bd_mismatch "BetterDiscord wrapper-ready schema mismatch: \${schema:-missing}" || return 1
@@ -1180,12 +1396,20 @@ bd_ready_marker_valid() {
   [[ "$app_path" = "$target_app_path" ]] || set_bd_mismatch "BetterDiscord wrapper-ready appPath mismatch: expected=$target_app_path actual=\${app_path:-missing}" || return 1
   [[ "$ready_target_app_path" = "$target_app_path" ]] || set_bd_mismatch "BetterDiscord wrapper-ready targetAppPath mismatch: expected=$target_app_path actual=\${ready_target_app_path:-missing}" || return 1
   [[ "$nested_target" = "$bd_nested_target" ]] || set_bd_mismatch "BetterDiscord wrapper-ready nestedTarget mismatch: expected=$bd_nested_target actual=\${nested_target:-missing}" || return 1
+  [[ -n "$recovery_run_id" ]] || set_bd_mismatch "BetterDiscord wrapper-ready recoveryRunId is missing" || return 1
+  [[ "$marker_handoff_id" = "$handoff_id" ]] || set_bd_mismatch "BetterDiscord wrapper-ready OpenAsar handoff mismatch" || return 1
+  [[ "$marker_source_process_pid" = "$source_process_pid" ]] || set_bd_mismatch "BetterDiscord wrapper-ready source process mismatch" || return 1
 
   ready_epoch="$(iso_to_epoch_ms "$ready_at" || true)"
-  armed_epoch="$(iso_to_epoch_ms "$bd_armed_at" || true)"
+  recovery_armed_epoch="$(iso_to_epoch_ms "$recovery_armed_at" || true)"
+  openasar_armed_epoch="$(iso_to_epoch_ms "$bd_armed_at" || true)"
   [[ -n "$ready_epoch" ]] || set_bd_mismatch "BetterDiscord wrapper-ready readyAt is invalid: \${ready_at:-missing}" || return 1
-  [[ -n "$armed_epoch" ]] || set_bd_mismatch "OpenAsar armedAt is invalid: \${bd_armed_at:-missing}" || return 1
-  (( ready_epoch >= armed_epoch )) || set_bd_mismatch "BetterDiscord wrapper-ready marker is stale: readyAt=$ready_at armedAt=$bd_armed_at" || return 1
+  [[ -n "$recovery_armed_epoch" ]] || set_bd_mismatch "BetterDiscord wrapper-ready armedAt is invalid: \${recovery_armed_at:-missing}" || return 1
+  [[ -n "$openasar_armed_epoch" ]] || set_bd_mismatch "OpenAsar armedAt is invalid: \${bd_armed_at:-missing}" || return 1
+  if (( recovery_armed_epoch < openasar_armed_epoch )); then
+    [[ -n "$expected_recovery_run_id" && "$expected_recovery_run_id" = "$recovery_run_id" ]] || set_bd_mismatch "BetterDiscord wrapper-ready recovery predates an unbound OpenAsar handoff" || return 1
+  fi
+  (( ready_epoch >= recovery_armed_epoch )) || set_bd_mismatch "BetterDiscord wrapper-ready marker is stale: readyAt=$ready_at armedAt=$recovery_armed_at" || return 1
 
   bd_bundle_marker_valid || return 1
   return 0
@@ -1201,6 +1425,10 @@ bd_no_update_result_valid() {
   local result_target_app_path=""
   local nested_target=""
   local outcome=""
+  local recovery_run_id=""
+  local marker_handoff_id=""
+  local marker_source_process_pid=""
+  local expected_recovery_run_id=""
   local result_armed_at=""
   local completed_at=""
   local result_armed_epoch=""
@@ -1219,6 +1447,10 @@ bd_no_update_result_valid() {
   result_target_app_path="$(json_string_value targetAppPath "$bd_result_path" || true)"
   nested_target="$(json_string_value nestedTarget "$bd_result_path" || true)"
   outcome="$(json_string_value outcome "$bd_result_path" || true)"
+  recovery_run_id="$(json_string_value recoveryRunId "$bd_result_path" || true)"
+  marker_handoff_id="$(json_string_value openAsarHandoffId "$bd_result_path" || true)"
+  marker_source_process_pid="$(json_number_value openAsarSourceProcessPid "$bd_result_path" || true)"
+  expected_recovery_run_id="$(json_string_value betterDiscordRecoveryRunId "$pending_path" || true)"
   result_armed_at="$(json_string_value armedAt "$bd_result_path" || true)"
   completed_at="$(json_string_value completedAt "$bd_result_path" || true)"
 
@@ -1226,13 +1458,16 @@ bd_no_update_result_valid() {
   [[ "$channel" = "$bd_channel" && "$installation_id" = "$bd_installation_id" ]] || return 1
   [[ "$app_path" = "$target_app_path" && "$result_target_app_path" = "$target_app_path" ]] || return 1
   [[ "$nested_target" = "$bd_nested_target" && "$outcome" = "no-update" ]] || return 1
+  [[ -n "$recovery_run_id" && "$marker_handoff_id" = "$handoff_id" && "$marker_source_process_pid" = "$source_process_pid" ]] || return 1
 
   result_armed_epoch="$(iso_to_epoch_ms "$result_armed_at" || true)"
   completed_epoch="$(iso_to_epoch_ms "$completed_at" || true)"
   openasar_armed_epoch="$(iso_to_epoch_ms "$bd_armed_at" || true)"
   [[ -n "$result_armed_epoch" && -n "$completed_epoch" && -n "$openasar_armed_epoch" ]] || return 1
   (( result_armed_epoch <= completed_epoch )) || return 1
-  (( completed_epoch >= openasar_armed_epoch )) || return 1
+  if (( result_armed_epoch < openasar_armed_epoch )); then
+    [[ -n "$expected_recovery_run_id" && "$expected_recovery_run_id" = "$recovery_run_id" ]] || return 1
+  fi
   (( completed_epoch <= now_epoch + 10000 && now_epoch - completed_epoch <= 300000 )) || return 1
 
   bd_bundle_marker_valid || return 1
@@ -1244,8 +1479,8 @@ exit_if_bd_no_update() {
   [[ "$bd_expected" = "1" ]] || return 0
   bd_no_update_result_valid || return 0
   log "BetterDiscord reported no Discord update; existing wrapper and OpenAsar payload remain valid; ending handoff without patch or relaunch"
+  remove_owned_payload
   clear_pending_update_marker
-  /bin/rm -f "$payload_path" 2>> "$log_path" || true
   exit 0
 }
 
@@ -1301,21 +1536,29 @@ copy_openasar_into_target() {
     log "Final OpenAsar target never became available at $final_asar"
     return 1
   }
+  exit_if_bd_recovery_disabled
 
   /bin/rm -f "$backup_temporary" "$payload_temporary" 2>/dev/null || true
 
-  if [[ "$saw_shipit" = "1" || ! -f "$backup_asar" ]]; then
-    if ! /bin/cp -f "$final_asar" "$backup_temporary" 2>> "$log_path" \
-      || ! /usr/bin/cmp -s "$final_asar" "$backup_temporary" \
-      || ! /bin/mv -f "$backup_temporary" "$backup_asar" 2>> "$log_path"; then
-      /bin/rm -f "$backup_temporary" 2>/dev/null || true
-      log "Failed to create a verified backup of final OpenAsar target"
-      return 1
-    fi
+      if [[ "$saw_shipit" = "1" || ! -f "$backup_asar" ]]; then
+        exit_if_bd_recovery_disabled
+        if ! /bin/cp -f "$final_asar" "$backup_temporary" 2>> "$log_path" \
+          || ! /usr/bin/cmp -s "$final_asar" "$backup_temporary"; then
+          /bin/rm -f "$backup_temporary" 2>/dev/null || true
+          log "Failed to create a verified backup of final OpenAsar target"
+          return 1
+        fi
+        exit_if_bd_recovery_disabled
+        if ! /bin/mv -f "$backup_temporary" "$backup_asar" 2>> "$log_path"; then
+          /bin/rm -f "$backup_temporary" 2>/dev/null || true
+          log "Failed to publish the verified backup of final OpenAsar target"
+          return 1
+        fi
   else
     log "Preserved existing target backup during direct patch"
   fi
 
+  exit_if_bd_recovery_disabled
   if ! /bin/cp -f "$payload_path" "$payload_temporary" 2>> "$log_path" \
     || ! /usr/bin/cmp -s "$payload_path" "$payload_temporary"; then
     /bin/rm -f "$payload_temporary" 2>/dev/null || true
@@ -1323,11 +1566,13 @@ copy_openasar_into_target() {
     return 1
   fi
 
+  exit_if_bd_recovery_disabled
   if [[ "$bd_expected" = "1" && -n "$bd_disabled_path" && -e "$bd_disabled_path" ]]; then
     /bin/rm -f "$payload_temporary" 2>/dev/null || true
     exit_if_bd_recovery_disabled
   fi
 
+  exit_if_bd_recovery_disabled
   if ! /bin/mv -f "$payload_temporary" "$final_asar" 2>> "$log_path"; then
     /bin/rm -f "$payload_temporary" 2>/dev/null || true
     log "Failed to atomically replace OpenAsar target $final_asar"
@@ -1360,7 +1605,7 @@ pending_update_valid() {
 
   if [[ ! -f "$pending_path" ]]; then
     log "Guard skipped; no updater pending marker"
-    /usr/bin/printf '{\n  "pending": false\n}\n' > "$pending_path" 2>/dev/null || true
+    clear_pending_update_marker
     return 1
   fi
 
@@ -1374,14 +1619,14 @@ pending_update_valid() {
 
   if [[ -n "$marker_target" && "$marker_target" != "$target_app_path" ]]; then
     log "Guard skipped; pending marker targets $marker_target instead of $target_app_path"
-    /usr/bin/printf '{\n  "pending": false\n}\n' > "$pending_path" 2>/dev/null || true
+    clear_pending_update_marker
     return 1
   fi
 
   if [[ "$bd_expected" = "1" ]]; then
     if ! json_bool_true betterDiscordExpected "$pending_path"; then
       log "Guard skipped; pending marker does not expect BetterDiscord"
-      /usr/bin/printf '{\n  "pending": false\n}\n' > "$pending_path" 2>/dev/null || true
+      clear_pending_update_marker
       return 1
     fi
 
@@ -1390,7 +1635,7 @@ pending_update_valid() {
     marker_nested_target="$(json_string_value nestedTarget "$pending_path" || true)"
     if [[ "$marker_installation_id" != "$bd_installation_id" || "$marker_app_path" != "$target_app_path" || "$marker_nested_target" != "$bd_nested_target" ]]; then
       log "Guard skipped; BetterDiscord pending identity mismatch expectedInstallationId=$bd_installation_id actualInstallationId=\${marker_installation_id:-missing}"
-      /usr/bin/printf '{\n  "pending": false\n}\n' > "$pending_path" 2>/dev/null || true
+      clear_pending_update_marker
       return 1
     fi
 
@@ -1403,7 +1648,7 @@ pending_update_valid() {
     age="$((now - marker_time))"
     if (( age > 300 )); then
       log "Guard skipped; pending marker is stale (\${age}s old)"
-      /usr/bin/printf '{\n  "pending": false\n}\n' > "$pending_path" 2>/dev/null || true
+      clear_pending_update_marker
       return 1
     fi
   fi
@@ -1413,15 +1658,34 @@ pending_update_valid() {
 }
 
 clear_pending_update_marker() {
+  local temporary=""
   [[ -n "$pending_path" ]] || return 0
-  /usr/bin/printf '{\n  "pending": false\n}\n' > "$pending_path" 2>/dev/null || true
+  owns_current_handoff || return 0
+  temporary="$pending_path.$$.tmp"
+  /usr/bin/printf '{\n  "pending": false\n}\n' > "$temporary" 2>/dev/null || return 0
+  if owns_current_handoff; then
+    /bin/mv -f "$temporary" "$pending_path" 2>/dev/null || true
+  else
+    /bin/rm -f "$temporary" 2>/dev/null || true
+  fi
+}
+
+remove_own_payload_run() {
+  [[ -n "$handoff_id" && "$payload_path" = "$payload_run_path/app.asar" && "$payload_run_path" = "$expected_payload_run_path" ]] || return 0
+  /bin/rm -rf "$payload_run_path" 2>> "$log_path" || true
+}
+
+remove_owned_payload() {
+  owns_current_handoff || return 0
+  remove_own_payload_run
 }
 
 exit_if_bd_recovery_disabled() {
+  exit_if_superseded
   [[ "$bd_expected" = "1" && -n "$bd_disabled_path" && -e "$bd_disabled_path" ]] || return 0
   log "BetterDiscord recovery is disabled; cancelling OpenAsar handoff without killing, copying, or relaunching Discord"
+  remove_owned_payload
   clear_pending_update_marker
-  /bin/rm -f "$payload_path" 2>> "$log_path" || true
   exit 0
 }
 
@@ -1527,6 +1791,7 @@ wait_for_app_bundle_ready() {
   local executable_path=""
 
   while (( SECONDS < deadline )); do
+    exit_if_superseded
     executable_path="$(app_executable_path || true)"
     if [[ -d "$target_app_path" && -f "$target_app_path/Contents/Info.plist" && -n "$executable_path" && -x "$executable_path" ]]; then
       return 0
@@ -1553,12 +1818,17 @@ relaunch_target() {
   local executable_path
 
   exit_if_bd_recovery_disabled
+  if ! restart_is_requested; then
+    log "Discord restart was not requested for this OpenAsar handoff; leaving Discord closed"
+    return 0
+  fi
   wait_for_app_bundle_ready || return 1
 
-  for attempt in 1 2 3; do
-    exit_if_bd_recovery_disabled
-    refresh_target_launch_services_registration
-    if open_output="$(/usr/bin/open "$target_app_path" 2>&1)"; then
+      for attempt in 1 2 3; do
+        exit_if_bd_recovery_disabled
+        refresh_target_launch_services_registration
+        exit_if_bd_recovery_disabled
+        if open_output="$(/usr/bin/open "$target_app_path" 2>&1)"; then
       log "Relaunched Discord $target_app_path"
       return 0
     fi
@@ -1571,6 +1841,7 @@ relaunch_target() {
     sleep 1
   done
 
+  exit_if_bd_recovery_disabled
   executable_path="$(app_executable_path || true)"
   if [[ -n "$executable_path" && -x "$executable_path" ]]; then
     log "Falling back to direct executable launch $executable_path"
@@ -1582,7 +1853,11 @@ relaunch_target() {
   return 1
 }
 
-log "Post-ShipIt helper started; mode=$mode reason=$reason staged=$staged_app_path target=$target_app_path betterDiscordExpected=$bd_expected installationId=\${bd_installation_id:-none}"
+log "Post-ShipIt helper started; mode=$mode reason=$reason staged=$staged_app_path target=$target_app_path betterDiscordExpected=$bd_expected installationId=\${bd_installation_id:-none} handoffId=\${handoff_id:-none} sourcePid=$source_process_pid"
+if ! wait_for_current_handoff; then
+  log "OpenAsar handoff ownership was not published; exiting without shared-state changes"
+  exit 0
+fi
 exit_if_bd_recovery_disabled
 exit_if_bd_no_update
 
@@ -1631,8 +1906,8 @@ fi
 
 if [[ "$bd_expected" = "1" ]] && ! wait_for_bd_wrapper_ready; then
   log "BetterDiscord handoff did not become ready; ending without killing, copying, or relaunching Discord"
+  remove_owned_payload
   clear_pending_update_marker
-  /bin/rm -f "$payload_path" 2>> "$log_path" || true
   exit 1
 fi
 
@@ -1651,7 +1926,7 @@ if ! copy_openasar_into_target; then
 fi
 exit_if_bd_recovery_disabled
 relaunch_target
-/bin/rm -f "$payload_path" 2>> "$log_path" || true
+remove_owned_payload
 clear_pending_update_marker
 
 log "Post-ShipIt helper complete"
@@ -1708,5 +1983,7 @@ module.exports = {
 
   getUpdater: () => (instance != null && instance.valid && instance) || null,
   prepareMacOSPostHostUpdateHelper,
-  prepareMacOSLegacyUpdaterGuard
+  prepareMacOSLegacyUpdaterGuard,
+  noteMacOSRestartRequested,
+  macOSRestartRecentlyRequested
 };
