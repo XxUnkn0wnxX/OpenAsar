@@ -49,6 +49,7 @@ The local wrapper accepts the same optional build arguments:
 
 ```bash
 ./local-build-no-autoupdate.zsh
+./local-build-no-autoupdate.zsh --help
 ```
 
 ## Optional macOS Recovery Timeout
@@ -68,7 +69,12 @@ An explicit command-line value takes precedence over the environment variable. T
 
 ```bash
 ./local-build-no-autoupdate.zsh --macos-recovery-timeout-seconds 60
+./local-build-no-autoupdate.zsh -mrts 60
 ```
+
+`-mrts` is a local-wrapper alias for the long timeout option. Both forms can
+be passed first because this wrapper forwards its options directly to the
+packer.
 
 This changes only the three long macOS recovery paths. The standalone legacy wait uses the configured window exactly, while the standalone guard keeps its existing 30-second wait. When BetterDiscord is detected, OpenAsar adds a 10-second coordination grace so matching recovery windows do not race. Keep OpenAsar's configured window at least as long as BetterDiscord's; the normal 90-second defaults therefore coordinate for up to 100 seconds. Other updater timers are unchanged.
 

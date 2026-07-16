@@ -6,6 +6,5 @@ miniSrc/
 tmp/
 AGENTS.md
 .venv/
-local-build-no-autoupdate.zsh
 
 *.crswap # crostini tmp files
