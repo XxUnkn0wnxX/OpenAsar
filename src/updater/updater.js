@@ -69,19 +69,35 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
   const nestedTarget = targetAppPath ? join(targetAppPath, 'Contents', 'Resources', 'betterdiscord.app.asar') : '';
   const betterDiscordReadyPath = join(userData, 'betterdiscord-bootstrap', 'wrapper-ready.json');
   const stoppedExistingPids = [];
+  const readPendingMarker = () => {
+    try {
+      const markerStat = ofs.lstatSync(pendingPath);
+      if (markerStat.isSymbolicLink() || !markerStat.isFile()) return null;
+      const marker = JSON.parse(ofs.readFileSync(pendingPath, 'utf8'));
+      return marker != null && typeof marker === 'object' && !Array.isArray(marker) ? marker : null;
+    } catch (_) {
+      return null;
+    }
+  };
+  const pendingMarkerIsFresh = () => {
+    try {
+      const markerStat = ofs.lstatSync(pendingPath);
+      return markerStat.isFile() && !markerStat.isSymbolicLink() && Date.now() - markerStat.mtimeMs <= 300000;
+    } catch (_) {
+      return false;
+    }
+  };
 
   if (mode === 'guard' && betterDiscordExpected) {
-    try {
-      const pending = JSON.parse(ofs.readFileSync(pendingPath, 'utf8'));
-      if (pending.pending === true
-        && pending.betterDiscordExpected === true
-        && pending.installationId === installationId
-        && pending.appPath === targetAppPath
-        && pending.nestedTarget === nestedTarget
-        && !Number.isNaN(Date.parse(pending.armedAt))) {
-        armedAt = pending.armedAt;
-      }
-    } catch (_) {}
+    const pending = readPendingMarker();
+    if (pending?.pending === true
+      && pending.betterDiscordExpected === true
+      && pending.installationId === installationId
+      && pending.appPath === targetAppPath
+      && pending.nestedTarget === nestedTarget
+      && !Number.isNaN(Date.parse(pending.armedAt))) {
+      armedAt = pending.armedAt;
+    }
   }
 
   const pendingIdentity = betterDiscordExpected ? {
@@ -139,17 +155,36 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
       ofs.appendFileSync(armLogPath, line);
     } catch (_) {}
   };
+  const appendArmLog = message => {
+    try {
+      ofs.appendFileSync(armLogPath, `[${new Date().toString()}] ${message}\n`);
+    } catch (_) {}
+  };
+  const readHelperPidFile = () => {
+    try {
+      const pidStat = ofs.lstatSync(pidPath);
+      if (pidStat.isSymbolicLink() || !pidStat.isFile()) return { trusted: false, pid: 0 };
+      const rawPid = ofs.readFileSync(pidPath, 'utf8').trim();
+      return { trusted: true, pid: /^\d+$/.test(rawPid) ? parseInt(rawPid, 10) : 0 };
+    } catch (_) {
+      return { trusted: true, pid: 0 };
+    }
+  };
   const listExistingHelpers = () => {
     const helpers = [];
-    let recordedPid = 0;
-    try {
-      if (ofs.lstatSync(pidPath).isSymbolicLink()) return helpers;
-      const rawPid = ofs.readFileSync(pidPath, 'utf8').trim();
-      if (/^\d+$/.test(rawPid)) recordedPid = parseInt(rawPid, 10);
-    } catch (_) {
-      return helpers;
+    const recordedPids = new Set();
+    const pidFile = readHelperPidFile();
+    if (!pidFile.trusted) return helpers;
+    if (pidFile.pid > 0) recordedPids.add(pidFile.pid);
+
+    const pending = readPendingMarker();
+    if (Number.isInteger(pending?.helperPid)
+      && pending.helperPid > 0
+      && pending.helperPath === helperPath
+      && pending.helperPidPath === pidPath) {
+      recordedPids.add(pending.helperPid);
     }
-    if (!Number.isFinite(recordedPid) || recordedPid <= 0) return helpers;
+    if (recordedPids.size === 0) return helpers;
 
     const commandPrefixes = [
       `zsh -f ${helperPath} `,
@@ -162,11 +197,33 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
       const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
       if (match == null) continue;
       const candidate = { pid: parseInt(match[1], 10), pgid: parseInt(match[2], 10), command: match[3] };
-      if (candidate.pid !== recordedPid || candidate.pid === process.pid || candidate.pgid !== candidate.pid) continue;
+      if (!recordedPids.has(candidate.pid) || candidate.pid === process.pid || candidate.pgid !== candidate.pid) continue;
       if (!commandPrefixes.some(prefix => candidate.command.startsWith(prefix)) || !candidate.command.includes(pidPath)) continue;
       helpers.push(candidate);
     }
     return helpers;
+  };
+  const helperMatchesPendingIdentity = (helper, pending) => {
+    if (pending?.pending !== true
+      || pending.helperPid !== helper.pid
+      || pending.helperPath !== helperPath
+      || pending.helperPidPath !== pidPath
+      || pending.targetAppPath !== targetAppPath
+      || pending.betterDiscordExpected !== betterDiscordExpected) {
+      return false;
+    }
+
+    if (betterDiscordExpected
+      && (pending.installationId !== installationId
+        || pending.channel !== betterDiscordChannel
+        || pending.appPath !== targetAppPath
+        || pending.nestedTarget !== nestedTarget)) {
+      return false;
+    }
+
+    if (mode !== 'guard' && pending.mode !== mode) return false;
+    if (mode === 'shipit' && pending.stagedAppPath !== stagedAppPath) return false;
+    return true;
   };
   const helperIsRunning = pid => {
     try {
@@ -183,8 +240,8 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
     }
     return !helperIsRunning(pid);
   };
-  const stopExistingHelpers = () => {
-    for (const helper of listExistingHelpers()) {
+  const stopExistingHelpers = (helpers = listExistingHelpers()) => {
+    for (const helper of helpers) {
       try {
         process.kill(-helper.pid, 'SIGTERM');
         stoppedExistingPids.push(helper.pid);
@@ -246,14 +303,34 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
       ofs.unlinkSync(join(userData, file));
     } catch (_) {}
   }
+
+  const existingHelpers = listExistingHelpers();
+  const pidFileOwner = readHelperPidFile();
+  const pendingOwner = readPendingMarker();
+  const matchingHelper = existingHelpers.length === 1
+    && pidFileOwner.trusted
+    && pidFileOwner.pid > 0
+    && pendingOwner?.helperPid === pidFileOwner.pid
+    && pendingMarkerIsFresh()
+    && helperMatchesPendingIdentity(existingHelpers[0], pendingOwner)
+    ? existingHelpers[0]
+    : null;
+  if (matchingHelper != null) {
+    appendArmLog(`Preserved live OpenAsar helper pid=${matchingHelper.pid} mode=${pendingOwner.mode || 'unknown'} for mode=${mode} reason=${reason || 'unspecified'}`);
+    return true;
+  }
+
   try {
-    stopExistingHelpers();
+    stopExistingHelpers(existingHelpers);
   } catch (_) {}
-  for (const file of [ logPath, consoleLogPath, pidPath ]) {
+  for (const file of [ logPath, consoleLogPath ]) {
     try {
       ofs.writeFileSync(file, '');
     } catch (_) {}
   }
+  try {
+    ofs.unlinkSync(pidPath);
+  } catch (_) {}
   if (stoppedExistingPids.length > 0) appendBootstrapLog(`Stopped existing OpenAsar helper pids=${stoppedExistingPids.join(',')}`);
 
   if (nestedArchiveExpected && !betterDiscordExpected) {
@@ -329,6 +406,13 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
   });
 
   if (Number.isInteger(child.pid) && child.pid > 0) {
+    try {
+      const temporaryPidPath = `${pidPath}.${process.pid}.tmp`;
+      ofs.writeFileSync(temporaryPidPath, `${child.pid}\n`, { mode: 0o600 });
+      ofs.renameSync(temporaryPidPath, pidPath);
+    } catch (error) {
+      appendBootstrapLog(`Could not record OpenAsar helper PID: ${String(error)}`);
+    }
     try {
       const pending = JSON.parse(ofs.readFileSync(pendingPath, 'utf8'));
       if (pending.pending === true) {
@@ -823,14 +907,14 @@ signal_helper_descendants() {
 }
 
 terminate_helper() {
-  local status="$1"
+  local exit_status="$1"
 
   trap - EXIT INT TERM
   signal_helper_descendants TERM
   /bin/sleep 0.1
   signal_helper_descendants KILL
   cleanup_pid_file
-  exit "$status"
+  exit "$exit_status"
 }
 
 /bin/mkdir -p "$(/usr/bin/dirname "$pid_path")" 2>/dev/null || true
