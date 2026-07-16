@@ -139,19 +139,65 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
       ofs.appendFileSync(armLogPath, line);
     } catch (_) {}
   };
-  const stopExistingHelpers = () => {
-    const psOutput = execSync('/bin/ps -axo pid=,command=', { encoding: 'utf8' });
+  const listExistingHelpers = () => {
+    const helpers = [];
+    let recordedPid = 0;
+    try {
+      if (ofs.lstatSync(pidPath).isSymbolicLink()) return helpers;
+      const rawPid = ofs.readFileSync(pidPath, 'utf8').trim();
+      if (/^\d+$/.test(rawPid)) recordedPid = parseInt(rawPid, 10);
+    } catch (_) {
+      return helpers;
+    }
+    if (!Number.isFinite(recordedPid) || recordedPid <= 0) return helpers;
+
+    const commandPrefixes = [
+      `zsh -f ${helperPath} `,
+      `/bin/zsh -f ${helperPath} `,
+      `/usr/bin/zsh -f ${helperPath} `,
+      `/usr/bin/env zsh -f ${helperPath} `
+    ];
+    const psOutput = execSync('/bin/ps -axo pid=,pgid=,command=', { encoding: 'utf8' });
     for (const line of psOutput.split('\n')) {
-      const match = line.match(/^\s*(\d+)\s+(.*)$/);
+      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
       if (match == null) continue;
-
-      const pid = parseInt(match[1], 10);
-      const command = match[2];
-      if (!Number.isFinite(pid) || pid <= 0 || pid === process.pid) continue;
-      if (!command.includes(helperPath) || !command.includes(bootstrapDir)) continue;
-
-      process.kill(pid, 'SIGTERM');
-      stoppedExistingPids.push(pid);
+      const candidate = { pid: parseInt(match[1], 10), pgid: parseInt(match[2], 10), command: match[3] };
+      if (candidate.pid !== recordedPid || candidate.pid === process.pid || candidate.pgid !== candidate.pid) continue;
+      if (!commandPrefixes.some(prefix => candidate.command.startsWith(prefix)) || !candidate.command.includes(pidPath)) continue;
+      helpers.push(candidate);
+    }
+    return helpers;
+  };
+  const helperIsRunning = pid => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+  const waitForHelperExit = pid => {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      if (!helperIsRunning(pid)) return true;
+      execSync('/bin/sleep 0.1');
+    }
+    return !helperIsRunning(pid);
+  };
+  const stopExistingHelpers = () => {
+    for (const helper of listExistingHelpers()) {
+      try {
+        process.kill(-helper.pid, 'SIGTERM');
+        stoppedExistingPids.push(helper.pid);
+      } catch (_) {
+        continue;
+      }
+      if (waitForHelperExit(helper.pid)) continue;
+      const current = listExistingHelpers().find(candidate => candidate.pid === helper.pid);
+      if (current == null) continue;
+      try {
+        process.kill(-helper.pid, 'SIGKILL');
+        waitForHelperExit(helper.pid);
+      } catch (_) {}
     }
   };
   const guardHasPendingUpdate = () => {
@@ -200,15 +246,14 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
       ofs.unlinkSync(join(userData, file));
     } catch (_) {}
   }
+  try {
+    stopExistingHelpers();
+  } catch (_) {}
   for (const file of [ logPath, consoleLogPath, pidPath ]) {
     try {
       ofs.writeFileSync(file, '');
     } catch (_) {}
   }
-
-  try {
-    stopExistingHelpers();
-  } catch (_) {}
   if (stoppedExistingPids.length > 0) appendBootstrapLog(`Stopped existing OpenAsar helper pids=${stoppedExistingPids.join(',')}`);
 
   if (nestedArchiveExpected && !betterDiscordExpected) {
@@ -761,11 +806,39 @@ cleanup_pid_file() {
   fi
 }
 
+helper_processes() {
+  /bin/ps -axo pid=,pgid= 2>/dev/null || true
+}
+
+signal_helper_descendants() {
+  local signal="$1"
+  local process_list="$(helper_processes)"
+  local child_pid=""
+  local process_group=""
+
+  while read -r child_pid process_group; do
+    [[ "$child_pid" = <-> && "$process_group" = "$$" && "$child_pid" != "$$" ]] || continue
+    /bin/kill "-$signal" "$child_pid" 2>/dev/null || true
+  done <<< "$process_list"
+}
+
+terminate_helper() {
+  local status="$1"
+
+  trap - EXIT INT TERM
+  signal_helper_descendants TERM
+  /bin/sleep 0.1
+  signal_helper_descendants KILL
+  cleanup_pid_file
+  exit "$status"
+}
+
 /bin/mkdir -p "$(/usr/bin/dirname "$pid_path")" 2>/dev/null || true
-print -r -- "$$" > "$pid_path" 2>/dev/null || true
+pid_temporary="$pid_path.$$.tmp"
+print -r -- "$$" > "$pid_temporary" 2>/dev/null && /bin/mv -f "$pid_temporary" "$pid_path" 2>/dev/null || true
 trap cleanup_pid_file EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
+trap 'terminate_helper 130' INT
+trap 'terminate_helper 143' TERM
 
 /bin/mkdir -p "$(/usr/bin/dirname "$console_log_path")" 2>/dev/null || true
 exec >> "$console_log_path" 2>&1

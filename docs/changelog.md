@@ -8,6 +8,7 @@
 - Coordinated macOS bootstrap recovery so OpenAsar waits for BetterDiscord's matching ready marker and never falls back to top-level `app.asar` while that handoff is expected.
 - Fixed build stripping so the embedded post-ShipIt helper keeps its timestamp parser intact and accepts valid BetterDiscord wrapper-ready markers.
 - Launch the detached macOS helper with `zsh -f` in both its shebang and spawn path, and give it a fixed system `PATH` plus a small macOS session/locale environment allowlist instead of inherited shell customization.
+- Made the helper PID own its detached process group, so stopping the validated PID also terminates helper child processes before the PID file is removed.
 - Documented the [Discord install manager](https://github.com/XxUnkn0wnxX/Scripts/blob/develop/shell/discord_install_manager.zsh) [`--BD` behavior](https://github.com/XxUnkn0wnxX/Scripts/blob/develop/docs/discord-install-manager.md): preserve valid wrappers, fall back to `app.asar` when absent, and reject `--update`.
 
 ## 2026-07-06
