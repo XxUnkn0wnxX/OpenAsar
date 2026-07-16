@@ -6,6 +6,7 @@
 
 - Added strict BetterDiscord wrapper detection and nested OpenAsar self/host-update recovery.
 - Coordinated macOS bootstrap recovery so OpenAsar waits for BetterDiscord's matching ready marker and never falls back to top-level `app.asar` while that handoff is expected.
+- End matching macOS recovery cleanly when BetterDiscord reports that no Discord replacement occurred, avoiding the second wrapper wait and unnecessary relaunch attempt.
 - Fixed build stripping so the embedded post-ShipIt helper keeps its timestamp parser intact and accepts valid BetterDiscord wrapper-ready markers.
 - Launch the detached macOS helper with `zsh -f` in both its shebang and spawn path, and give it a fixed system `PATH` plus a small macOS session/locale environment allowlist instead of inherited shell customization.
 - Made the helper PID own its detached process group, so stopping the validated PID also terminates helper child processes before the PID file is removed.

@@ -68,6 +68,7 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
   const installationId = betterDiscordExpected ? betterDiscordWrapper.marker.installationId : '';
   const nestedTarget = targetAppPath ? join(targetAppPath, 'Contents', 'Resources', 'betterdiscord.app.asar') : '';
   const betterDiscordReadyPath = join(userData, 'betterdiscord-bootstrap', 'wrapper-ready.json');
+  const betterDiscordResultPath = join(userData, 'betterdiscord-bootstrap', 'wrapper-result.json');
   const stoppedExistingPids = [];
   const readPendingMarker = () => {
     try {
@@ -342,7 +343,7 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
   ofs.copyFileSync(currentAsar, payloadPath);
   appendBootstrapLog(`Prepared OpenAsar helper; mode=${mode} reason=${reason || 'unspecified'} staged=${stagedAppPath || '(none)'} target=${targetAppPath || '(unknown)'} payload=${payloadPath}`);
   if (betterDiscordExpected) {
-    appendBootstrapLog(`Detected BetterDiscord wrapper; installationId=${installationId} waitingFor=${betterDiscordReadyPath} nestedTarget=${nestedTarget}`);
+    appendBootstrapLog(`Detected BetterDiscord wrapper; installationId=${installationId} waitingFor=${betterDiscordReadyPath} noUpdateResult=${betterDiscordResultPath} nestedTarget=${nestedTarget}`);
     log('Updater', `OpenAsar recovery will wait for BetterDiscord wrapper installationId=${installationId} before writing ${nestedTarget}`);
   } else {
     appendBootstrapLog(`BetterDiscord wrapper not detected (${betterDiscordWrapper.reason}); retaining standalone app.asar recovery path`);
@@ -370,6 +371,7 @@ const prepareMacOSPostHostUpdateHelper = (stagedAppPath = '', targetAppPath = ge
     installationId,
     nestedTarget,
     betterDiscordReadyPath,
+    betterDiscordResultPath,
     armedAt
   }));
   ofs.chmodSync(helperPath, 0o755);
@@ -875,6 +877,8 @@ bd_ready_path="\${13:-}"
 bd_armed_at="\${14:-}"
 bd_nested_target="\${15:-}"
 bd_channel="\${16:-}"
+bd_result_path=""
+[[ -n "$bd_ready_path" ]] && bd_result_path="$(/usr/bin/dirname "$bd_ready_path")/wrapper-result.json"
 bd_disabled_path=""
 [[ -n "$bd_ready_path" ]] && bd_disabled_path="$(/usr/bin/dirname "$bd_ready_path")/recovery-disabled"
 bd_last_mismatch=""
@@ -1187,6 +1191,64 @@ bd_ready_marker_valid() {
   return 0
 }
 
+bd_no_update_result_valid() {
+  local schema=""
+  local owner=""
+  local style=""
+  local channel=""
+  local installation_id=""
+  local app_path=""
+  local result_target_app_path=""
+  local nested_target=""
+  local outcome=""
+  local result_armed_at=""
+  local completed_at=""
+  local result_armed_epoch=""
+  local completed_epoch=""
+  local openasar_armed_epoch=""
+  local now_epoch="$(( $(/bin/date +%s) * 1000 ))"
+
+  [[ -n "$bd_result_path" && -f "$bd_result_path" && ! -L "$bd_result_path" ]] || return 1
+
+  schema="$(json_number_value schema "$bd_result_path" || true)"
+  owner="$(json_string_value owner "$bd_result_path" || true)"
+  style="$(json_string_value style "$bd_result_path" || true)"
+  channel="$(json_string_value channel "$bd_result_path" || true)"
+  installation_id="$(json_string_value installationId "$bd_result_path" || true)"
+  app_path="$(json_string_value appPath "$bd_result_path" || true)"
+  result_target_app_path="$(json_string_value targetAppPath "$bd_result_path" || true)"
+  nested_target="$(json_string_value nestedTarget "$bd_result_path" || true)"
+  outcome="$(json_string_value outcome "$bd_result_path" || true)"
+  result_armed_at="$(json_string_value armedAt "$bd_result_path" || true)"
+  completed_at="$(json_string_value completedAt "$bd_result_path" || true)"
+
+  [[ "$schema" = "1" && "$owner" = "betterdiscord" && "$style" = "app-wrapper" ]] || return 1
+  [[ "$channel" = "$bd_channel" && "$installation_id" = "$bd_installation_id" ]] || return 1
+  [[ "$app_path" = "$target_app_path" && "$result_target_app_path" = "$target_app_path" ]] || return 1
+  [[ "$nested_target" = "$bd_nested_target" && "$outcome" = "no-update" ]] || return 1
+
+  result_armed_epoch="$(iso_to_epoch_ms "$result_armed_at" || true)"
+  completed_epoch="$(iso_to_epoch_ms "$completed_at" || true)"
+  openasar_armed_epoch="$(iso_to_epoch_ms "$bd_armed_at" || true)"
+  [[ -n "$result_armed_epoch" && -n "$completed_epoch" && -n "$openasar_armed_epoch" ]] || return 1
+  (( result_armed_epoch <= completed_epoch )) || return 1
+  (( completed_epoch >= openasar_armed_epoch )) || return 1
+  (( completed_epoch <= now_epoch + 10000 && now_epoch - completed_epoch <= 300000 )) || return 1
+
+  bd_bundle_marker_valid || return 1
+  payload_matches_target || return 1
+  return 0
+}
+
+exit_if_bd_no_update() {
+  [[ "$bd_expected" = "1" ]] || return 0
+  bd_no_update_result_valid || return 0
+  log "BetterDiscord reported no Discord update; existing wrapper and OpenAsar payload remain valid; ending handoff without patch or relaunch"
+  clear_pending_update_marker
+  /bin/rm -f "$payload_path" 2>> "$log_path" || true
+  exit 0
+}
+
 wait_for_bd_wrapper_ready() {
   local deadline="$((SECONDS + 180))"
   local previous_mismatch=""
@@ -1196,6 +1258,7 @@ wait_for_bd_wrapper_ready() {
   log "BetterDiscord wrapper expected; waiting for wrapper-ready marker installationId=$bd_installation_id target=$bd_nested_target"
   while (( SECONDS < deadline )); do
     exit_if_bd_recovery_disabled
+    exit_if_bd_no_update
     bd_last_mismatch=""
     if bd_ready_marker_valid; then
       log "BetterDiscord wrapper ready; installationId=$bd_installation_id target=$bd_nested_target"
@@ -1222,7 +1285,11 @@ copy_openasar_into_target() {
   exit_if_bd_recovery_disabled
 
   if [[ "$bd_expected" = "1" ]]; then
-    wait_for_bd_wrapper_ready || return 1
+    bd_last_mismatch=""
+    if ! bd_ready_marker_valid; then
+      log "BetterDiscord wrapper-ready handoff was lost before OpenAsar copy; refusing nested replacement lastMismatch=\${bd_last_mismatch:-unknown}"
+      return 1
+    fi
     if payload_matches_target; then
       log "BetterDiscord nested payload already matches staged OpenAsar; no copy needed"
       return 0
@@ -1366,6 +1433,7 @@ wait_for_legacy_host_replacement() {
 
   while (( SECONDS < deadline )); do
     exit_if_bd_recovery_disabled
+    exit_if_bd_no_update
     if [[ "$bd_expected" = "1" ]] && bd_ready_marker_valid; then
       seen_stock=1
       log "Legacy migration observed BetterDiscord wrapper-ready marker"
@@ -1410,6 +1478,7 @@ wait_for_guard_replacement() {
   log "Guard armed; watching for target OpenAsar location replacement"
   while (( SECONDS < deadline )); do
     exit_if_bd_recovery_disabled
+    exit_if_bd_no_update
     if [[ "$bd_expected" = "1" ]] && bd_ready_marker_valid; then
       log "Guard detected BetterDiscord wrapper-ready marker"
       return 0
@@ -1515,6 +1584,7 @@ relaunch_target() {
 
 log "Post-ShipIt helper started; mode=$mode reason=$reason staged=$staged_app_path target=$target_app_path betterDiscordExpected=$bd_expected installationId=\${bd_installation_id:-none}"
 exit_if_bd_recovery_disabled
+exit_if_bd_no_update
 
 if [[ "$mode" != "shipit" && -z "$target_app_path" ]]; then
   log "Unable to determine target Discord.app path"
@@ -1534,6 +1604,7 @@ else
   no_shipit_deadline="$((SECONDS + 5))"
   while (( SECONDS < deadline )); do
     exit_if_bd_recovery_disabled
+    exit_if_bd_no_update
     refresh_shipit_state || true
 
     if shipit_running; then
@@ -1555,6 +1626,13 @@ fi
 
 if [[ -z "$target_app_path" ]]; then
   log "Unable to determine target Discord.app path"
+  exit 1
+fi
+
+if [[ "$bd_expected" = "1" ]] && ! wait_for_bd_wrapper_ready; then
+  log "BetterDiscord handoff did not become ready; ending without killing, copying, or relaunching Discord"
+  clear_pending_update_marker
+  /bin/rm -f "$payload_path" 2>> "$log_path" || true
   exit 1
 fi
 

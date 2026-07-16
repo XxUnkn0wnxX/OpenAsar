@@ -170,6 +170,64 @@ describe('macOS post-update helper ownership', () => {
     assert.equal(fs.readFileSync(helperPid(), 'utf8'), `${activePid}\n`);
   });
 
+  test('a matching BetterDiscord no-update result ends legacy recovery without relaunch', () => {
+    if (hostPlatform !== 'darwin') return;
+
+    const target = path.join(root, 'Discord.app');
+    const resources = path.join(target, 'Contents', 'Resources');
+    const wrapper = path.join(resources, 'app');
+    const nestedTarget = path.join(resources, 'betterdiscord.app.asar');
+    const resultPath = path.join(root, 'user-data', 'betterdiscord-bootstrap', 'wrapper-result.json');
+    const installationId = 'test-installation';
+
+    fs.mkdirSync(wrapper, { recursive: true });
+    fs.writeFileSync(path.join(wrapper, 'index.js'), '// __betterdiscord_inject_meta__\nmodule.exports = require("../betterdiscord.app.asar");\n');
+    fs.writeFileSync(path.join(wrapper, 'package.json'), `${JSON.stringify({ name: 'discord', main: './index.js' })}\n`);
+    fs.writeFileSync(path.join(wrapper, '.betterdiscord-inject.json'), `${JSON.stringify({
+      schema: 1,
+      owner: 'betterdiscord',
+      style: 'app-wrapper',
+      channel: 'stable',
+      mode: 'release',
+      loader: 'index.js',
+      payload: '../betterdiscord.app.asar',
+      bdPath: '/fixture/betterdiscord.asar',
+      installationId
+    })}\n`);
+    fs.copyFileSync(path.join(root, 'betterdiscord.app.asar'), nestedTarget);
+
+    assert.equal(updater.prepareMacOSPostHostUpdateHelper('', target, 'legacy', 'update-downloaded'), true);
+    const pending = JSON.parse(fs.readFileSync(pendingPath(), 'utf8'));
+    const completedAt = new Date(Date.parse(pending.armedAt) + 1000).toISOString();
+    fs.mkdirSync(path.dirname(resultPath), { recursive: true });
+    fs.writeFileSync(resultPath, `${JSON.stringify({
+      schema: 1,
+      owner: 'betterdiscord',
+      style: 'app-wrapper',
+      channel: 'stable',
+      installationId,
+      appPath: target,
+      targetAppPath: target,
+      nestedTarget,
+      armedAt: new Date(Date.parse(pending.armedAt) - 1000).toISOString(),
+      outcome: 'no-update',
+      completedAt
+    }, null, 2)}\n`);
+
+    const helperRun = spawnSync(spawnCalls[0].command, spawnCalls[0].args, {
+      encoding: 'utf8',
+      timeout: 5000
+    });
+    assert.equal(helperRun.status, 0, helperRun.stderr);
+    assert.equal(fs.readFileSync(nestedTarget, 'utf8'), 'OpenAsar fixture\n');
+    assert.equal(JSON.parse(fs.readFileSync(pendingPath(), 'utf8')).pending, false);
+    assert.equal(fs.existsSync(helperPid()), false);
+    assert.equal(fs.existsSync(bootstrapPath('app.asar')), false);
+    const log = fs.readFileSync(bootstrapPath('post-shipit-helper.log'), 'utf8');
+    assert.match(log, /ending handoff without patch or relaunch/);
+    assert.doesNotMatch(log, /Sent (TERM|KILL)|Copying OpenAsar|Relaunched Discord|restoration failed/);
+  });
+
   test('disagreed PID ownership is replaced instead of reused', () => {
     const target = path.join(root, 'Discord.app');
     assert.equal(updater.prepareMacOSPostHostUpdateHelper('', target, 'legacy', 'update-downloaded'), true);
