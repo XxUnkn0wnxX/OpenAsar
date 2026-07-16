@@ -378,7 +378,7 @@ describe('macOS post-update helper ownership', () => {
     assert.equal(fs.readFileSync(helperPid(), 'utf8'), `${activePid}\n`);
   });
 
-  test('a matching BetterDiscord no-update result ends legacy recovery without relaunch', async () => {
+  test('a matching BetterDiscord no-update result only relaunches for explicit restart intent', async () => {
     if (hostPlatform !== 'darwin') return;
 
     const target = path.join(root, 'Discord.app');
@@ -387,8 +387,18 @@ describe('macOS post-update helper ownership', () => {
     const nestedTarget = path.join(resources, 'betterdiscord.app.asar');
     const resultPath = path.join(root, 'user-data', 'betterdiscord-bootstrap', 'wrapper-result.json');
     const installationId = 'test-installation';
+    const executablePath = path.join(target, 'Contents', 'MacOS', 'Discord');
 
     fs.mkdirSync(wrapper, { recursive: true });
+    fs.mkdirSync(path.dirname(executablePath), { recursive: true });
+    fs.writeFileSync(path.join(target, 'Contents', 'Info.plist'), [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+      '<plist version="1.0"><dict><key>CFBundleExecutable</key><string>Discord</string></dict></plist>',
+      ''
+    ].join('\n'));
+    fs.writeFileSync(executablePath, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(executablePath, 0o755);
     fs.writeFileSync(path.join(wrapper, 'index.js'), '// __betterdiscord_inject_meta__\nmodule.exports = require("../betterdiscord.app.asar");\n');
     fs.writeFileSync(path.join(wrapper, 'package.json'), `${JSON.stringify({ name: 'discord', main: './index.js' })}\n`);
     fs.writeFileSync(path.join(wrapper, '.betterdiscord-inject.json'), `${JSON.stringify({
@@ -404,40 +414,60 @@ describe('macOS post-update helper ownership', () => {
     })}\n`);
     fs.copyFileSync(path.join(root, 'betterdiscord.app.asar'), nestedTarget);
 
-    assert.equal(updater.prepareMacOSPostHostUpdateHelper('', target, 'legacy', 'update-downloaded'), true);
-    const pending = JSON.parse(fs.readFileSync(pendingPath(), 'utf8'));
-    pending.betterDiscordRecoveryRunId = 'test-recovery-run';
-    writeJsonAtomically(pendingPath(), pending);
-    const preparedPayloadPath = JSON.parse(fs.readFileSync(bootstrapPath('post-shipit-state.json'), 'utf8')).payloadPath;
-    const recoveryArmedAt = new Date(Date.parse(pending.armedAt) - 500).toISOString();
-    const completedAt = new Date(Date.parse(pending.armedAt) + 1000).toISOString();
-    fs.mkdirSync(path.dirname(resultPath), { recursive: true });
-    fs.writeFileSync(resultPath, `${JSON.stringify({
-      schema: 1,
-      owner: 'betterdiscord',
-      style: 'app-wrapper',
-      channel: 'stable',
-      installationId,
-      appPath: target,
-      targetAppPath: target,
-      nestedTarget,
-      recoveryRunId: 'test-recovery-run',
-      openAsarHandoffId: pending.handoffId,
-      openAsarSourceProcessPid: pending.sourceProcessPid,
-      armedAt: recoveryArmedAt,
-      outcome: 'no-update',
-      completedAt
-    }, null, 2)}\n`);
+    const runNoUpdate = async restartRequested => {
+      assert.equal(updater.prepareMacOSPostHostUpdateHelper('', target, 'legacy', 'update-downloaded', restartRequested), true);
+      const pending = JSON.parse(fs.readFileSync(pendingPath(), 'utf8'));
+      pending.betterDiscordRecoveryRunId = 'test-recovery-run';
+      writeJsonAtomically(pendingPath(), pending);
+      const preparedPayloadPath = JSON.parse(fs.readFileSync(bootstrapPath('post-shipit-state.json'), 'utf8')).payloadPath;
+      const recoveryArmedAt = new Date(Date.parse(pending.armedAt) - 500).toISOString();
+      const completedAt = new Date(Date.parse(pending.armedAt) + 1000).toISOString();
+      fs.mkdirSync(path.dirname(resultPath), { recursive: true });
+      fs.writeFileSync(resultPath, `${JSON.stringify({
+        schema: 1,
+        owner: 'betterdiscord',
+        style: 'app-wrapper',
+        channel: 'stable',
+        installationId,
+        appPath: target,
+        targetAppPath: target,
+        nestedTarget,
+        recoveryRunId: 'test-recovery-run',
+        openAsarHandoffId: pending.handoffId,
+        openAsarSourceProcessPid: pending.sourceProcessPid,
+        armedAt: recoveryArmedAt,
+        outcome: 'no-update',
+        completedAt
+      }, null, 2)}\n`);
 
-    const helperRun = await runPreparedHelper();
-    assert.equal(helperRun.status, 0, `${helperRun.stderr}\n${helperRun.consoleLog}`);
-    assert.equal(fs.readFileSync(nestedTarget, 'utf8'), 'OpenAsar fixture\n');
-    assert.equal(JSON.parse(fs.readFileSync(pendingPath(), 'utf8')).pending, false, helperRun.consoleLog);
-    assert.equal(fs.existsSync(helperPid()), false);
-    assert.equal(fs.existsSync(preparedPayloadPath), false);
-    const log = fs.readFileSync(bootstrapPath('post-shipit-helper.log'), 'utf8');
-    assert.match(log, /ending handoff without patch or relaunch/);
-    assert.doesNotMatch(log, /Sent (TERM|KILL)|Copying OpenAsar|Relaunched Discord|restoration failed/);
+      if (restartRequested) {
+        const helperPath = bootstrapPath('post-shipit-helper.zsh');
+        const installedHelperSource = fs.readFileSync(helperPath, 'utf8');
+        const helperSource = installedHelperSource
+          .replace('local lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"', 'local lsregister="/usr/bin/true"')
+          .replace('/usr/bin/open "$target_app_path"', '/usr/bin/true "$target_app_path"');
+        assert.notEqual(helperSource, installedHelperSource);
+        assert.doesNotMatch(helperSource, /System\/Library.*lsregister|\/usr\/bin\/open/);
+        fs.writeFileSync(helperPath, helperSource);
+      }
+
+      const helperRun = await runPreparedHelper();
+      assert.equal(helperRun.status, 0, `${helperRun.stderr}\n${helperRun.consoleLog}`);
+      assert.equal(fs.readFileSync(nestedTarget, 'utf8'), 'OpenAsar fixture\n');
+      assert.equal(JSON.parse(fs.readFileSync(pendingPath(), 'utf8')).pending, false, helperRun.consoleLog);
+      assert.equal(fs.existsSync(helperPid()), false);
+      assert.equal(fs.existsSync(preparedPayloadPath), false);
+      return fs.readFileSync(bootstrapPath('post-shipit-helper.log'), 'utf8');
+    };
+
+    const quietLog = await runNoUpdate(false);
+    assert.match(quietLog, /ending handoff without patch or relaunch/);
+    assert.doesNotMatch(quietLog, /Sent (TERM|KILL)|Copying OpenAsar|Relaunched Discord|restoration failed/);
+
+    const restartLog = await runNoUpdate(true);
+    assert.match(restartLog, /relaunching the existing target/);
+    assert.match(restartLog, /Relaunched Discord/);
+    assert.doesNotMatch(restartLog, /Sent (TERM|KILL)|Copying OpenAsar|restoration failed/);
   });
 
   test('a stale BetterDiscord result is rejected and quiet recovery uses the current generation', async () => {

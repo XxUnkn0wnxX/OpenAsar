@@ -1482,11 +1482,19 @@ bd_no_update_result_valid() {
 }
 
 exit_if_bd_no_update() {
+  local relaunch_failed=0
+
   [[ "$bd_expected" = "1" ]] || return 0
   bd_no_update_result_valid || return 0
-  log "BetterDiscord reported no Discord update; existing wrapper and OpenAsar payload remain valid; ending handoff without patch or relaunch"
+  if restart_is_requested; then
+    log "BetterDiscord reported no Discord update; existing wrapper and OpenAsar payload remain valid; relaunching the existing target"
+    relaunch_target || relaunch_failed=1
+  else
+    log "BetterDiscord reported no Discord update; existing wrapper and OpenAsar payload remain valid; ending handoff without patch or relaunch"
+  fi
   remove_owned_payload
   clear_pending_update_marker
+  (( relaunch_failed == 0 )) || exit 1
   exit 0
 }
 
