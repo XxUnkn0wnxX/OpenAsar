@@ -83,7 +83,11 @@ const startCore = () => {
       metadata: {}
     },
     logger: {
-      createLogger: () => {},
+      createLogger: () => ({
+        error: () => {},
+        info: () => {},
+        warn: () => {}
+      }),
       initializeLogging: () => {},
       ipcMainRendererLogger: () => {}
     },
