@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-29
+
+### Legacy host version lock
+
+- Added backend-only `openasar.VersionLock` with canonical shorthand/absolute parsing and empty-string default to support phase-1 legacy locking.
+- Added bootstrap preflight validation for legacy lock mode: when `openasar.forceLegacyUpdater` is `true`, a mismatched active lock fails closed before updater/splash with a clear error and `app.quit()`.
+- Kept lock values pass-through whenever `openasar.forceLegacyUpdater` is `false` so invalid/legacy-only values do not block current new-updater startup.
+- Routed `moduleUpdater.init` to consume a validated lock value directly per startup call instead of a mutable global, preserving existing `SKIP_HOST_UPDATE` compatibility.
+- Kept module-update behavior unchanged under a valid lock: only host checks are skipped, while module endpoint, `host_version`, download path, events, and lifecycle continue unchanged.
+- Preserved the active lock in backend-only config handling so remote config writes cannot clear it.
+
 ## 2026-07-16
 
 ### BetterDiscord wrapper compatibility

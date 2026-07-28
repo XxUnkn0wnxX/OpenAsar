@@ -1,6 +1,8 @@
-const { app, session } = require('electron');
+const { app, dialog, session } = require('electron');
 const { readFileSync } = require('fs');
 const { join } = require('path');
+const { validateVersionLock } = require('./utils/versionLock');
+const paths = require('./paths');
 
 if (!settings.get('enableHardwareAcceleration', true)) app.disableHardwareAcceleration();
 process.env.PULSE_LATENCY_MSEC = process.env.PULSE_LATENCY_MSEC ?? 30;
@@ -104,6 +106,37 @@ const startCore = () => {
 };
 
 const startUpdate = () => {
+  const lock = validateVersionLock({
+    value: oaConfig.VersionLock,
+    runningVersion: buildInfo.version,
+    forceLegacyUpdater: oaConfig.forceLegacyUpdater,
+    useNewUpdater: Constants.USE_NEW_UPDATER
+  });
+  if (!lock.locked && lock.error) {
+    const settingsPath = join(paths.getUserData(), 'settings.json');
+    const reason = lock.error.code === 'version-mismatch'
+      ? `Install Discord ${lock.error.expected} first, or set openasar.VersionLock to "" and restart.`
+      : `${lock.error.message} Set openasar.VersionLock to "" to continue without a lock.`;
+    const message = [
+      'OpenAsar could not activate the legacy Discord version lock.',
+      reason,
+      `Configured value: ${JSON.stringify(oaConfig.VersionLock)}`,
+      lock.error.expected ? `Locked version: ${lock.error.expected}` : null,
+      `Running Discord version: ${buildInfo.version}`,
+      `Edit ${settingsPath} to change openasar.VersionLock.`,
+      'Legacy update flow is required while locked.'
+    ].filter(Boolean).join('\n');
+
+    log('VersionLock', `Validation failed: ${lock.error.code}; ${lock.error.message}`);
+    try {
+      dialog.showErrorBox('OpenAsar version lock', message);
+    } catch (e) {
+      log('VersionLock', 'Failed to show the version-lock error dialog', e);
+    }
+    app.quit();
+    return;
+  }
+
   const urls = [
     oaConfig.noTrack !== false ? 'https://*/api/*/science' : '',
     oaConfig.noTrack !== false ? 'https://*/api/*/metrics' : '',
@@ -123,7 +156,7 @@ const startUpdate = () => {
 
     require('./firstRun').do();
   } else {
-    moduleUpdater.init(Constants.UPDATE_ENDPOINT, buildInfo);
+    moduleUpdater.init(Constants.UPDATE_ENDPOINT, buildInfo, lock.locked ? lock.lockVersion : null);
   }
 
   splash.events.once('APP_SHOULD_LAUNCH', () => {

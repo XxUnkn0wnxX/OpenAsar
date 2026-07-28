@@ -10,6 +10,7 @@ const restart = () => {
 };
 
 const backendOnlyKeys = [
+  'VersionLock',
   'forceLegacyUpdater'
 ];
 

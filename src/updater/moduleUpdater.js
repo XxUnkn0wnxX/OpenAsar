@@ -48,10 +48,16 @@ const redirs = url => new Promise(res => get(url, r => { // Minimal wrapper arou
   res(r);
 }));
 
-exports.init = (endpoint, { releaseChannel, version }) => {
+exports.init = (endpoint, { releaseChannel, version }, lockedHostVersion = null) => {
   const local = buildInfo.localModulesRoot;
-  skipHost = settings.get('SKIP_HOST_UPDATE');
-  skipModule = settings.get('SKIP_MODULE_UPDATE') || local != null;
+  const hostLocked = lockedHostVersion != null;
+  const skipModuleSetting = settings.get('SKIP_MODULE_UPDATE');
+  skipHost = settings.get('SKIP_HOST_UPDATE') || hostLocked;
+  skipModule = skipModuleSetting || local != null;
+  if (hostLocked) {
+    log('Modules', `Host update checks locked to ${lockedHostVersion}`);
+    log('Modules', `Module updates remain ${skipModule ? 'disabled' : 'enabled'} (SKIP_MODULE_UPDATE=${skipModuleSetting}, localModulesRoot=${local != null})`);
+  }
 
   basePath = local != null ? local : join(paths.getUserDataVersioned(), 'modules');
   manifestPath = join(basePath, 'installed.json');

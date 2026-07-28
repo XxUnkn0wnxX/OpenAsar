@@ -48,6 +48,7 @@ const openAsarDefaults = {
   autoupdate: true,
   css: '',
   js: '',
+  VersionLock: '',
   forceLegacyUpdater: false
 };
 
