@@ -1,5 +1,6 @@
 const VERSION_LOCK_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const SHORTHAND_VERSION_PATTERN = /^(0|[1-9]\d*)$/;
+const LEGACY_VERSION_LOCK_DIALOG_TITLE = 'OpenAsar';
 
 const unlockedVersionLock = () => ({
   locked: false,
@@ -74,7 +75,16 @@ const validateVersionLock = ({ value, runningVersion, forceLegacyUpdater, useNew
   return parsed;
 };
 
+const buildLegacyVersionMismatchMessage = ({ runningVersion, expected }) => [
+  'The Discord binary version differs from the configured VersionLock.',
+  '',
+  `Discord binary version: ${runningVersion}`,
+  `VersionLock: ${expected}`
+].join('\n');
+
 exports.VERSION_LOCK_PATTERN = VERSION_LOCK_PATTERN;
 exports.SHORTHAND_VERSION_PATTERN = SHORTHAND_VERSION_PATTERN;
+exports.LEGACY_VERSION_LOCK_DIALOG_TITLE = LEGACY_VERSION_LOCK_DIALOG_TITLE;
 exports.parseVersionLockValue = parseVersionLockValue;
 exports.validateVersionLock = validateVersionLock;
+exports.buildLegacyVersionMismatchMessage = buildLegacyVersionMismatchMessage;

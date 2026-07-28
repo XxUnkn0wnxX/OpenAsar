@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { describe, test } = require('node:test');
 
-const { parseVersionLockValue, validateVersionLock, VERSION_LOCK_PATTERN, SHORTHAND_VERSION_PATTERN } = require('../src/utils/versionLock');
+const { LEGACY_VERSION_LOCK_DIALOG_TITLE, buildLegacyVersionMismatchMessage, parseVersionLockValue, validateVersionLock, VERSION_LOCK_PATTERN, SHORTHAND_VERSION_PATTERN } = require('../src/utils/versionLock');
 
 describe('openasar VersionLock validation', () => {
   test('allows absent lock', () => {
@@ -238,5 +238,20 @@ describe('openasar VersionLock validation', () => {
 
     assert.equal(result.locked, false);
     assert.equal(result.error?.code, 'version-mismatch');
+  });
+
+  test('builds a mismatch message with explicit binary and lock versions', () => {
+    const message = buildLegacyVersionMismatchMessage({
+      runningVersion: '0.0.403',
+      expected: '0.0.402'
+    });
+
+    assert.equal(LEGACY_VERSION_LOCK_DIALOG_TITLE, 'OpenAsar');
+    assert.equal(message, [
+      'The Discord binary version differs from the configured VersionLock.',
+      '',
+      'Discord binary version: 0.0.403',
+      'VersionLock: 0.0.402'
+    ].join('\n'));
   });
 });

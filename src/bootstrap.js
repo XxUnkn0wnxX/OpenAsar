@@ -1,7 +1,7 @@
 const { app, dialog, session } = require('electron');
 const { readFileSync } = require('fs');
 const { join } = require('path');
-const { validateVersionLock } = require('./utils/versionLock');
+const { LEGACY_VERSION_LOCK_DIALOG_TITLE, buildLegacyVersionMismatchMessage, validateVersionLock } = require('./utils/versionLock');
 const paths = require('./paths');
 
 if (!settings.get('enableHardwareAcceleration', true)) app.disableHardwareAcceleration();
@@ -114,22 +114,24 @@ const startUpdate = () => {
   });
   if (!lock.locked && lock.error) {
     const settingsPath = join(paths.getUserData(), 'settings.json');
-    const reason = lock.error.code === 'version-mismatch'
-      ? `Install Discord ${lock.error.expected} first, or set openasar.VersionLock to "" and restart.`
-      : `${lock.error.message} Set openasar.VersionLock to "" to continue without a lock.`;
-    const message = [
-      'OpenAsar could not activate the legacy Discord version lock.',
-      reason,
-      `Configured value: ${JSON.stringify(oaConfig.VersionLock)}`,
-      lock.error.expected ? `Locked version: ${lock.error.expected}` : null,
-      `Running Discord version: ${buildInfo.version}`,
-      `Edit ${settingsPath} to change openasar.VersionLock.`,
-      'Legacy update flow is required while locked.'
-    ].filter(Boolean).join('\n');
+    const message = lock.error.code === 'version-mismatch'
+      ? buildLegacyVersionMismatchMessage({
+        runningVersion: buildInfo.version,
+        expected: lock.error.expected
+      })
+      : [
+        'OpenAsar could not activate the legacy Discord version lock.',
+        `${lock.error.message} Set openasar.VersionLock to "" to continue without a lock.`,
+        `Configured value: ${JSON.stringify(oaConfig.VersionLock)}`,
+        lock.error.expected ? `Locked version: ${lock.error.expected}` : null,
+        `Running Discord version: ${buildInfo.version}`,
+        `Edit ${settingsPath} to change openasar.VersionLock.`,
+        'Legacy update flow is required while locked.'
+      ].filter(Boolean).join('\n');
 
     log('VersionLock', `Validation failed: ${lock.error.code}; ${lock.error.message}`);
     try {
-      dialog.showErrorBox('OpenAsar version lock', message);
+      dialog.showErrorBox(LEGACY_VERSION_LOCK_DIALOG_TITLE, message);
     } catch (e) {
       log('VersionLock', 'Failed to show the version-lock error dialog', e);
     }
