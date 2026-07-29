@@ -1,5 +1,5 @@
 # OpenAsar &nbsp;<sup><sub>/ˈoʊpən ʌsɑr/ &nbsp;*(o-pen as-are)*</sup></sub>
-![Nightly Status](https://github.com/XxUnkn0wnxX/OpenAsar/actions/workflows/nightly-custom-update-repo.yml/badge.svg) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)]([https://choosealicense.com/licenses/agpl/l](https://choosealicense.com/licenses/agpl-3.0/))
+![Nightly Status](https://github.com/XxUnkn0wnxX/OpenAsar/actions/workflows/nightly-custom-update-repo.yml/badge.svg) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://choosealicense.com/licenses/agpl-3.0/)
 
 **An open-source alternative of Discord desktop's `app.asar`**
 
@@ -24,6 +24,10 @@ The [Discord install manager](https://github.com/XxUnkn0wnxX/Scripts/blob/develo
 
 ## Local Build
 See [docs/build.md](docs/build.md) for local build instructions, including local test builds with `--disable-autoupdate`.
+
+## Architecture
+
+See [docs/architecture.md](docs/architecture.md) for the fork's startup, updater, VersionLock, BetterDiscord, recovery, build, and validation boundaries.
 
 ## Changelog
 See [docs/changelog.md](docs/changelog.md) for the current local work log / changelog.

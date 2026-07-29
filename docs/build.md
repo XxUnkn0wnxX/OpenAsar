@@ -102,32 +102,28 @@ node --test tests/*.test.js
 The automated platform fixtures cover macOS, Windows, and Linux mappings without touching live Discord installations. Only macOS has received live VersionLock testing; Windows and Linux behavior remains untested outside the fixtures.
 
 ## Optional GitHub Workflows
-The default upstream workflow remains in `.github/workflows/nightly.yml`.
 
-Additional opt-in workflow templates are included for forks:
+This fork keeps three workflow variants:
 
+- `.github/workflows/nightly.yml`
 - `.github/workflows/nightly-disable-autoupdate.yml`
 - `.github/workflows/nightly-custom-update-repo.yml`
 
-Manual workflow runs expose an optional macOS recovery timeout input whose workflow-build default is `60` seconds. Builds made without an explicit workflow or local override keep the normal `90`-second default.
+Manual workflow runs expose an optional macOS recovery timeout input whose workflow-build default is `55` seconds. Builds made without an explicit workflow or local override keep the normal `90`-second source default.
 
-Both templates now mirror the main nightly pipeline structure more closely:
+All three workflows:
 
 - build an `app.asar`
 - run the same Linux and Windows startup smoke tests
 - publish a release in the repo where the workflow runs
 
-The custom update repo workflow is manual-only and requires editing:
-
-```text
-UPDATE_REPO: 'owner/repo'
-```
-
-before use so releases point at the correct fork.
+The smoke jobs are currently independent validation rather than release gates: each release job depends only on `build`, while its test dependencies remain commented out.
 
 The intended differences are:
 
+- `nightly.yml`: manual normal build using the default update repository
 - `nightly-disable-autoupdate.yml`: packs with `--disable-autoupdate`
 - `nightly-disable-autoupdate.yml`: publishes `nightly-no-autoupdate`
-- `nightly-custom-update-repo.yml`: packs with `--update-repo owner/repo`
+- `nightly-custom-update-repo.yml`: runs manually or on `develop` pushes that affect source, scripts, or workflows
+- `nightly-custom-update-repo.yml`: packs with `--update-repo XxUnkn0wnxX/OpenAsar`
 - `nightly-custom-update-repo.yml`: publishes `nightly-fork`
