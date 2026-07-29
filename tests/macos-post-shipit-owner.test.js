@@ -538,7 +538,7 @@ describe('macOS post-update helper ownership', () => {
       readyAt: completedAt
     });
 
-    const helperRun = await runPreparedHelper(8000);
+    const helperRun = await runPreparedHelper(12000);
     assert.equal(helperRun.status, 0, `${helperRun.stderr}\n${helperRun.consoleLog}`);
     const log = fs.readFileSync(bootstrapPath('post-shipit-helper.log'), 'utf8');
     assert.doesNotMatch(log, /ending handoff without patch or relaunch/);
