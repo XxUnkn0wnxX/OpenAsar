@@ -125,6 +125,8 @@ New/native updater behavior:
 
 Discord does not expose a dependable historical-manifest-by-version API. The `version` request value is only a hint, so OpenAsar reconstructs an exact full-only manifest only while Discord still serves all target host/module packages. The first reconstruction can be large and may download the target packages once for hashing before Discord's native updater downloads the packages it needs to install. Later launches reuse the valid local manifest without that network work.
 
+With the new/native updater, the first locked launch after setting or changing `VersionLock` can take up to a few minutes while OpenAsar constructs and validates `pinned_update.json`. Let that launch finish; later launches reuse the valid cached manifest. Legacy locking does not build this manifest and should apply almost immediately.
+
 Changing `VersionLock` invalidates a cache for the old target. If the installed Discord binary was changed to the same new value, OpenAsar builds or fetches a replacement manifest and re-locks. If the binary was not changed, the earlier binary-versus-lock check quits before any manifest or updater work.
 
 Version-lock logging:

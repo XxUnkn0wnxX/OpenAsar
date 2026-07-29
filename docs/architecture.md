@@ -171,6 +171,8 @@ When the response targets another host version:
 - the host plus every module reported by the target feed is downloaded and streamed through SHA-256;
 - the reconstructed manifest contains full packages only and empty delta arrays.
 
+The first new-updater launch after setting or changing `VersionLock` can therefore take up to a few minutes while OpenAsar streams the exact host and module packages, calculates their hashes, and constructs `pinned_update.json`. Subsequent launches reuse a valid cached manifest. The legacy updater does not use this reconstruction path and should apply its lock almost immediately.
+
 A custom `NEW_UPDATE_ENDPOINT` affects the initial manifest request, but target module-version reconstruction still uses Discord's fixed API endpoint.
 
 ### Manifest trust boundaries
