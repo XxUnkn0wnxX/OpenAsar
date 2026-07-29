@@ -9,6 +9,7 @@
 - **:paintbrush: Splash Theming**: Easy theming for your splash which works with most themes for any client mod
 - **:electric_plug: Drop-in**: Replace one file and it's installed, that's it (same with uninstall)
 - **:gear: Configurable**: Adds many config options for Discord and OpenAsar enhancements (see config section)
+- **:lock: VersionLock**: Freezes an already-installed Discord host version in legacy or new/native updater mode without installing, upgrading, or downgrading Discord, and without blocking normal module downloads. See [VersionLock docs](docs/config.md#versionlock).
 - **:cloud: Lightweight**: <1% of Discord's original size (9mb -> ~50kb)
 - **:shield: No Tracking**: Removes Discord's built-in tracking for crashes and errors in the asar (not app itself)
 - **:jigsaw: BetterDiscord Compatible**: Detects the BetterDiscord fork's validated app wrapper, keeps OpenAsar in `Resources/betterdiscord.app.asar`, and retains normal `Resources/app.asar` behavior when no wrapper is present
