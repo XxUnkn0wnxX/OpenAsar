@@ -7,6 +7,7 @@ const { get } = require('https');
 
 const paths = require('../paths');
 const buildInfo = require('../utils/buildInfo');
+const { getNativeUpdaterPlatform } = require('../utils/updaterIdentity');
 const updater = require('./updater');
 
 const mkdir = (x) => fs.mkdirSync(x, { recursive: true });
@@ -125,7 +126,7 @@ exports.init = (endpoint, { releaseChannel, version }, lockedHostVersion = null)
     events.emit('checked', { failed: true });
   });
 
-  const platform = process.platform === 'darwin' ? 'osx' : 'linux';
+  const platform = getNativeUpdaterPlatform();
   host.setFeedURL(`${endpoint}/updates/${releaseChannel}?platform=${platform}&version=${version}`);
 
   baseUrl = `${endpoint}/modules/${releaseChannel}`;

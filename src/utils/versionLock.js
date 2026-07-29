@@ -1,27 +1,32 @@
 const VERSION_LOCK_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const SHORTHAND_VERSION_PATTERN = /^(0|[1-9]\d*)$/;
-const LEGACY_VERSION_LOCK_DIALOG_TITLE = 'OpenAsar';
+const VERSION_LOCK_DIALOG_TITLE = 'OpenAsar';
 
 const unlockedVersionLock = () => ({
   locked: false,
   lockVersion: null,
+  mode: null,
   error: null
 });
 
 const buildVersionLockError = (code, message, details = {}) => ({
   locked: false,
   lockVersion: null,
+  mode: null,
   error: { code, message, ...details }
 });
 
+const isVersionLockRequested = value => value !== undefined && value !== false && value !== '';
+
 const parseVersionLockValue = (value) => {
-  if (value === undefined || value === false || value === '') return unlockedVersionLock();
+  if (!isVersionLockRequested(value)) return unlockedVersionLock();
 
   if (typeof value === 'number') {
     if (!Number.isSafeInteger(value) || value < 0) return buildVersionLockError('invalid-type', 'openasar.VersionLock number values must be a safe non-negative integer.');
     return {
       locked: true,
       lockVersion: `0.0.${value}`,
+      mode: null,
       error: null
     };
   }
@@ -31,6 +36,7 @@ const parseVersionLockValue = (value) => {
       return {
         locked: true,
         lockVersion: `0.0.${value}`,
+        mode: null,
         error: null
       };
     }
@@ -39,6 +45,7 @@ const parseVersionLockValue = (value) => {
       return {
         locked: true,
         lockVersion: value,
+        mode: null,
         error: null
       };
     }
@@ -51,31 +58,41 @@ const parseVersionLockValue = (value) => {
 };
 
 const validateVersionLock = ({ value, runningVersion, forceLegacyUpdater, useNewUpdater }) => {
-  if (forceLegacyUpdater !== true) return unlockedVersionLock();
-
   const parsed = parseVersionLockValue(value);
 
   if (parsed.error) return parsed;
   if (!parsed.locked) return parsed;
-  if (useNewUpdater === true) {
+
+  const mode = forceLegacyUpdater === true ? 'legacy' : 'new';
+  if (mode === 'legacy' && useNewUpdater === true) {
     return buildVersionLockError(
       'new-updater-active',
       'VersionLock is active and forceLegacyUpdater is true, but USE_NEW_UPDATER is currently true.',
       { expectedMode: 'legacy' }
     );
   }
+  if (mode === 'new' && useNewUpdater !== true) {
+    return buildVersionLockError(
+      'new-updater-required',
+      'VersionLock is active and forceLegacyUpdater is false, but the new updater is not available.',
+      { expectedMode: 'new' }
+    );
+  }
   if (parsed.lockVersion !== runningVersion) {
     return buildVersionLockError(
       'version-mismatch',
-      'openasar.VersionLock must match the running build version when legacy lock is active.',
-      { expected: parsed.lockVersion, runningVersion }
+      'openasar.VersionLock must match the running Discord binary version.',
+      { expected: parsed.lockVersion, runningVersion, expectedMode: mode }
     );
   }
 
-  return parsed;
+  return {
+    ...parsed,
+    mode
+  };
 };
 
-const buildLegacyVersionMismatchMessage = ({ runningVersion, expected }) => [
+const buildVersionMismatchMessage = ({ runningVersion, expected }) => [
   'The Discord binary version differs from the configured VersionLock.',
   '',
   `Discord binary version: ${runningVersion}`,
@@ -84,7 +101,10 @@ const buildLegacyVersionMismatchMessage = ({ runningVersion, expected }) => [
 
 exports.VERSION_LOCK_PATTERN = VERSION_LOCK_PATTERN;
 exports.SHORTHAND_VERSION_PATTERN = SHORTHAND_VERSION_PATTERN;
-exports.LEGACY_VERSION_LOCK_DIALOG_TITLE = LEGACY_VERSION_LOCK_DIALOG_TITLE;
+exports.VERSION_LOCK_DIALOG_TITLE = VERSION_LOCK_DIALOG_TITLE;
+exports.LEGACY_VERSION_LOCK_DIALOG_TITLE = VERSION_LOCK_DIALOG_TITLE;
+exports.isVersionLockRequested = isVersionLockRequested;
 exports.parseVersionLockValue = parseVersionLockValue;
 exports.validateVersionLock = validateVersionLock;
-exports.buildLegacyVersionMismatchMessage = buildLegacyVersionMismatchMessage;
+exports.buildVersionMismatchMessage = buildVersionMismatchMessage;
+exports.buildLegacyVersionMismatchMessage = buildVersionMismatchMessage;

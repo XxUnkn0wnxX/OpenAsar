@@ -72,21 +72,26 @@ const ensureOpenAsarDefaults = () => {
 
 ensureOpenAsarDefaults();
 
-const enforceLegacyUpdaterSetting = reason => {
+const enforceLegacyUpdaterSetting = (reason, synchronizeNativeMode = false) => {
   settings.reload();
   global.oaConfig = settings.get('openasar', {});
 
-  if (oaConfig.forceLegacyUpdater !== true) return false;
-  if (settings.get('USE_NEW_UPDATER') === false) return true;
+  const forceLegacyUpdater = oaConfig.forceLegacyUpdater === true;
+  if (!forceLegacyUpdater && !synchronizeNativeMode) return false;
 
-  settings.set('USE_NEW_UPDATER', false);
-  settings.save();
-  log('Init', `Forced USE_NEW_UPDATER=false (${reason}) because openasar.forceLegacyUpdater is enabled`);
+  const useNewUpdater = !forceLegacyUpdater;
+  if (settings.get('USE_NEW_UPDATER') !== useNewUpdater) {
+    settings.set('USE_NEW_UPDATER', useNewUpdater);
+    settings.save();
+    log('Init', forceLegacyUpdater
+      ? `Forced USE_NEW_UPDATER=false (${reason}) because openasar.forceLegacyUpdater is enabled`
+      : `Forced USE_NEW_UPDATER=true (${reason}) because openasar.forceLegacyUpdater is disabled`);
+  }
 
-  return true;
+  return forceLegacyUpdater;
 };
 
-const legacyUpdaterForcedAtStartup = enforceLegacyUpdaterSetting('startup');
+const legacyUpdaterForcedAtStartup = enforceLegacyUpdaterSetting('startup', true);
 const armMacOSUpdaterGuard = reason => {
   if (process.platform !== 'darwin') return;
 

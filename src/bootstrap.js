@@ -1,7 +1,15 @@
 const { app, dialog, session } = require('electron');
 const { readFileSync } = require('fs');
 const { join } = require('path');
-const { LEGACY_VERSION_LOCK_DIALOG_TITLE, buildLegacyVersionMismatchMessage, validateVersionLock } = require('./utils/versionLock');
+const { VERSION_LOCK_DIALOG_TITLE, buildVersionMismatchMessage, validateVersionLock } = require('./utils/versionLock');
+const { configureNativeVersionLock } = require('./utils/nativeVersionLock');
+const { resolvePinnedManifest } = require('./utils/pinnedUpdateManifest');
+const {
+  getNativeUpdaterPlatform,
+  getNativeUpdaterArch,
+  getNativeUpdaterPlatformVersion
+} = require('./utils/updaterIdentity');
+const { initializeVersionLockLogger } = require('./utils/versionLockLogger');
 const paths = require('./paths');
 
 if (!settings.get('enableHardwareAcceleration', true)) app.disableHardwareAcceleration();
@@ -105,37 +113,73 @@ const startCore = () => {
   });
 };
 
-const startUpdate = () => {
+const startUpdate = async () => {
+  const versionLockLogger = initializeVersionLockLogger({
+    userData: paths.getUserData(),
+    channel: buildInfo.releaseChannel,
+    runningVersion: buildInfo.version,
+    useNewUpdater: Constants.USE_NEW_UPDATER,
+    forceLegacyUpdater: oaConfig.forceLegacyUpdater,
+    rawVersionLock: oaConfig.VersionLock
+  });
+
   const lock = validateVersionLock({
     value: oaConfig.VersionLock,
     runningVersion: buildInfo.version,
     forceLegacyUpdater: oaConfig.forceLegacyUpdater,
     useNewUpdater: Constants.USE_NEW_UPDATER
   });
-  if (!lock.locked && lock.error) {
+
+  versionLockLogger.append('validation', {
+    updaterMode: lock.mode || (Constants.USE_NEW_UPDATER ? 'new' : 'legacy'),
+    result: lock.error ? 'error' : lock.locked ? 'locked' : 'unlocked',
+    locked: lock.locked,
+    errorCode: lock.error?.code || null,
+    normalizedVersionLock: lock.lockVersion || lock.error?.expected || null
+  });
+
+  const stopForVersionLockError = error => {
     const settingsPath = join(paths.getUserData(), 'settings.json');
-    const message = lock.error.code === 'version-mismatch'
-      ? buildLegacyVersionMismatchMessage({
+    const expected = error.expected || lock.lockVersion;
+    const updaterMode = error.expectedMode || lock.mode || (oaConfig.forceLegacyUpdater === true ? 'legacy' : 'new');
+    const message = error.code === 'version-mismatch'
+      ? buildVersionMismatchMessage({
         runningVersion: buildInfo.version,
-        expected: lock.error.expected
+        expected
       })
       : [
-        'OpenAsar could not activate the legacy Discord version lock.',
-        `${lock.error.message} Set openasar.VersionLock to "" to continue without a lock.`,
-        `Configured value: ${JSON.stringify(oaConfig.VersionLock)}`,
-        lock.error.expected ? `Locked version: ${lock.error.expected}` : null,
-        `Running Discord version: ${buildInfo.version}`,
-        `Edit ${settingsPath} to change openasar.VersionLock.`,
-        'Legacy update flow is required while locked.'
-      ].filter(Boolean).join('\n');
+        'OpenAsar could not activate the Discord version lock.',
+        '',
+        `Updater mode: ${updaterMode}`,
+        `Discord binary version: ${buildInfo.version}`,
+        `VersionLock: ${expected || JSON.stringify(oaConfig.VersionLock)}`,
+        `Reason: ${error.message || error.code || 'Unknown version-lock error'}`,
+        '',
+        'No Discord update was started.',
+        `Set openasar.VersionLock to "" in ${settingsPath} to continue without a lock.`
+      ].join('\n');
 
-    log('VersionLock', `Validation failed: ${lock.error.code}; ${lock.error.message}`);
+    log('VersionLock', `Validation failed: ${error.code || 'unknown'}; ${error.message || String(error)}`);
+    versionLockLogger.append('validation-action', {
+      updaterMode,
+      rawVersionLock: oaConfig.VersionLock,
+      normalizedVersionLock: expected || null,
+      action: 'show-version-lock-dialog-and-quit',
+      errorCode: error.code || 'unknown',
+      errorMessage: error.message || String(error),
+      errorDetails: error.details || null,
+      errorCause: error.cause ? String(error.cause?.message || error.cause) : null
+    });
     try {
-      dialog.showErrorBox(LEGACY_VERSION_LOCK_DIALOG_TITLE, message);
-    } catch (e) {
-      log('VersionLock', 'Failed to show the version-lock error dialog', e);
+      dialog.showErrorBox(VERSION_LOCK_DIALOG_TITLE, message);
+    } catch (dialogError) {
+      log('VersionLock', 'Failed to show the version-lock error dialog', dialogError);
     }
     app.quit();
+  };
+
+  if (lock.error) {
+    stopForVersionLockError(lock.error);
     return;
   }
 
@@ -148,16 +192,73 @@ const startUpdate = () => {
   if (urls.length > 0) session.defaultSession.webRequest.onBeforeRequest({ urls }, (e, cb) => cb({ cancel: true }));
 
   const startMin = process.argv?.includes?.('--start-minimized');
-  if (Constants.USE_NEW_UPDATER && updater.tryInitUpdater(buildInfo, Constants.NEW_UPDATE_ENDPOINT, Constants.USE_RUST_BSPATCH)) {
-    const inst = updater.getUpdater();
+  let newUpdaterInitialized = false;
 
-    inst.on('host-updated', () => autoStart.update(() => {}));
-    inst.on('unhandled-exception', fatal);
-    inst.on('InconsistentInstallerState', fatal);
-    inst.on('update-error', console.error);
+  if (Constants.USE_NEW_UPDATER) {
+    newUpdaterInitialized = updater.tryInitUpdater(buildInfo, Constants.NEW_UPDATE_ENDPOINT, Constants.USE_RUST_BSPATCH);
+    versionLockLogger.append('new-updater-init', {
+      updaterMode: 'new',
+      initialized: newUpdaterInitialized,
+      locked: lock.locked
+    });
 
-    require('./firstRun').do();
-  } else {
+    if (newUpdaterInitialized) {
+      const inst = updater.getUpdater();
+
+      inst.on('host-updated', () => autoStart.update(() => {}));
+      inst.on('unhandled-exception', fatal);
+      inst.on('InconsistentInstallerState', fatal);
+      inst.on('update-error', console.error);
+
+      try {
+        await configureNativeVersionLock({
+          instance: inst,
+          lock,
+          resolvePinnedManifest,
+          manifestOptions: {
+            userData: paths.getUserData(),
+            channel: buildInfo.releaseChannel,
+            version: lock.lockVersion,
+            platform: getNativeUpdaterPlatform(),
+            arch: getNativeUpdaterArch(),
+            platformVersion: getNativeUpdaterPlatformVersion(),
+            endpoint: Constants.NEW_UPDATE_ENDPOINT,
+            logEvent: ({ event, ...details }) => versionLockLogger.append(`manifest-${event}`, {
+              updaterMode: 'new',
+              ...details
+            })
+          },
+          logEvent: (event, details) => versionLockLogger.append(event, details)
+        });
+      } catch (error) {
+        stopForVersionLockError(error);
+        return;
+      }
+
+      require('./firstRun').do();
+    } else if (lock.locked && lock.mode === 'new') {
+      stopForVersionLockError({
+        code: 'native-updater-unavailable',
+        message: 'The new Discord updater could not be initialized.',
+        expected: lock.lockVersion,
+        expectedMode: 'new'
+      });
+      return;
+    }
+  }
+
+  if (!newUpdaterInitialized) {
+    const hostCheckEnabled = settings.get('SKIP_HOST_UPDATE') !== true && lock.locked !== true;
+    const moduleUpdateEnabled = settings.get('SKIP_MODULE_UPDATE') !== true && buildInfo.localModulesRoot == null;
+
+    versionLockLogger.append('legacy-init', {
+      updaterMode: 'legacy',
+      hostCheckEnabled,
+      moduleUpdateEnabled,
+      localModulesRoot: buildInfo.localModulesRoot == null ? null : buildInfo.localModulesRoot,
+      fallbackFromNewUpdater: Constants.USE_NEW_UPDATER
+    });
+
     moduleUpdater.init(Constants.UPDATE_ENDPOINT, buildInfo, lock.locked ? lock.lockVersion : null);
   }
 
@@ -186,7 +287,19 @@ const startUpdate = () => {
     }, 3000);
   });
 
-  splash.initSplash(startMin);
+  const useLockedUpdaterHost = lock.locked === true && lock.mode === 'new';
+
+  if (newUpdaterInitialized) {
+    versionLockLogger.append('native-host-activation-policy', {
+      updaterMode: 'new',
+      locked: useLockedUpdaterHost,
+      activationSuppressed: useLockedUpdaterHost
+    });
+  }
+
+  splash.initSplash(startMin, {
+    allowObsoleteHost: useLockedUpdaterHost
+  });
 };
 
 

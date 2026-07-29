@@ -6,9 +6,9 @@ const updater = require("../updater/updater");
 let launched, win;
 
 
-exports.initSplash = (startMin) => {
+exports.initSplash = (startMin, options = {}) => {
   const inst = updater.getUpdater();
-  if (inst) initNew(inst);
+  if (inst) initNew(inst, options);
     else initOld();
 
   launchSplash(startMin);
@@ -115,7 +115,7 @@ class UIProgress { // Generic class to track updating and sent states to splash
   }
 }
 
-const initNew = async (inst) => {
+const initNew = async (inst, options = {}) => {
   toSend = -1;
 
   const retryOptions = {
@@ -158,7 +158,11 @@ const initNew = async (inst) => {
       });
 
       if (!installedAnything) {
-        await inst.startCurrentVersion({});
+        if (options.allowObsoleteHost) {
+          await inst.startCurrentVersion({}, { allowObsoleteHost: true });
+        } else {
+          await inst.startCurrentVersion({});
+        }
         inst.collectGarbage();
 
         return launchMain();

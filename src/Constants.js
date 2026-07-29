@@ -4,8 +4,9 @@ const d = 'https://discord.com'; // Domain
 const r = releaseChannel; // Release channel
 const s = r === 'stable' ? '' : (r[0].toUpperCase() + r.slice(1)); // Suffix per release channel (stable = blank, canary = Canary, etc)
 const n = p + s; // Name as Discord<Channel> (if not stable)
+const { isVersionLockRequested } = require('./utils/versionLock');
 const useNewUpdater = oaConfig.forceLegacyUpdater !== true &&
-  (settings.get('USE_NEW_UPDATER') || process.platform === 'win32' || process.platform === 'linux');
+  (isVersionLockRequested(oaConfig.VersionLock) || settings.get('USE_NEW_UPDATER') || process.platform === 'win32' || process.platform === 'linux');
 
 
 module.exports = {

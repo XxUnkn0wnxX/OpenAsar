@@ -1,7 +1,15 @@
 const assert = require('node:assert/strict');
 const { describe, test } = require('node:test');
 
-const { LEGACY_VERSION_LOCK_DIALOG_TITLE, buildLegacyVersionMismatchMessage, parseVersionLockValue, validateVersionLock, VERSION_LOCK_PATTERN, SHORTHAND_VERSION_PATTERN } = require('../src/utils/versionLock');
+const {
+  VERSION_LOCK_DIALOG_TITLE,
+  buildVersionMismatchMessage,
+  isVersionLockRequested,
+  parseVersionLockValue,
+  validateVersionLock,
+  VERSION_LOCK_PATTERN,
+  SHORTHAND_VERSION_PATTERN
+} = require('../src/utils/versionLock');
 
 describe('openasar VersionLock validation', () => {
   test('allows absent lock', () => {
@@ -53,6 +61,7 @@ describe('openasar VersionLock validation', () => {
 
     assert.equal(result.locked, true);
     assert.equal(result.lockVersion, '0.0.402');
+    assert.equal(result.mode, 'legacy');
     assert.equal(result.error, null);
   });
 
@@ -164,33 +173,34 @@ describe('openasar VersionLock validation', () => {
     assert.equal(SHORTHAND_VERSION_PATTERN.test('0402'), false);
   });
 
-  test('passes through non-empty lock when legacy mode is off', () => {
+  test('applies a non-empty lock to the new updater when legacy force is off', () => {
     const result = validateVersionLock({
       value: '0.0.402',
-      runningVersion: '0.0.000',
+      runningVersion: '0.0.402',
+      forceLegacyUpdater: false,
+      useNewUpdater: true
+    });
+
+    assert.equal(result.locked, true);
+    assert.equal(result.lockVersion, '0.0.402');
+    assert.equal(result.mode, 'new');
+    assert.equal(result.error, null);
+  });
+
+  test('rejects invalid values in new updater mode', () => {
+    const result = validateVersionLock({
+      value: { bad: true },
+      runningVersion: '0.0.402',
       forceLegacyUpdater: false,
       useNewUpdater: true
     });
 
     assert.equal(result.locked, false);
     assert.equal(result.lockVersion, null);
-    assert.equal(result.error, null);
+    assert.equal(result.error?.code, 'invalid-format');
   });
 
-  test('allows invalid/malformed values when legacy mode is off', () => {
-    const result = validateVersionLock({
-      value: { bad: true },
-      runningVersion: '0.0.402',
-      forceLegacyUpdater: false,
-      useNewUpdater: false
-    });
-
-    assert.equal(result.locked, false);
-    assert.equal(result.lockVersion, null);
-    assert.equal(result.error, null);
-  });
-
-  test('does not apply a lock to manually selected legacy mode without forceLegacyUpdater', () => {
+  test('requires the new updater for a lock when legacy force is off', () => {
     const result = validateVersionLock({
       value: '0.0.402',
       runningVersion: '0.0.402',
@@ -199,8 +209,7 @@ describe('openasar VersionLock validation', () => {
     });
 
     assert.equal(result.locked, false);
-    assert.equal(result.lockVersion, null);
-    assert.equal(result.error, null);
+    assert.equal(result.error?.code, 'new-updater-required');
   });
 
   test('does not reject empty lock when forceLegacyUpdater is true', () => {
@@ -228,30 +237,40 @@ describe('openasar VersionLock validation', () => {
     assert.equal(result.error?.code, 'new-updater-active');
   });
 
-  test('rejects version mismatch', () => {
-    const result = validateVersionLock({
-      value: '0.0.402',
-      runningVersion: '0.0.403',
-      forceLegacyUpdater: true,
-      useNewUpdater: false
-    });
+  test('rejects version mismatch in both updater modes', () => {
+    for (const mode of [
+      { forceLegacyUpdater: true, useNewUpdater: false, expectedMode: 'legacy' },
+      { forceLegacyUpdater: false, useNewUpdater: true, expectedMode: 'new' }
+    ]) {
+      const result = validateVersionLock({
+        value: '0.0.402',
+        runningVersion: '0.0.403',
+        ...mode
+      });
 
-    assert.equal(result.locked, false);
-    assert.equal(result.error?.code, 'version-mismatch');
+      assert.equal(result.locked, false);
+      assert.equal(result.error?.code, 'version-mismatch');
+      assert.equal(result.error?.expectedMode, mode.expectedMode);
+    }
   });
 
   test('builds a mismatch message with explicit binary and lock versions', () => {
-    const message = buildLegacyVersionMismatchMessage({
+    const message = buildVersionMismatchMessage({
       runningVersion: '0.0.403',
       expected: '0.0.402'
     });
 
-    assert.equal(LEGACY_VERSION_LOCK_DIALOG_TITLE, 'OpenAsar');
+    assert.equal(VERSION_LOCK_DIALOG_TITLE, 'OpenAsar');
     assert.equal(message, [
       'The Discord binary version differs from the configured VersionLock.',
       '',
       'Discord binary version: 0.0.403',
       'VersionLock: 0.0.402'
     ].join('\n'));
+  });
+
+  test('detects whether VersionLock requests an updater mode', () => {
+    for (const value of [undefined, false, '']) assert.equal(isVersionLockRequested(value), false);
+    for (const value of [0, 402, '402', '0.0.402', null, true, {}]) assert.equal(isVersionLockRequested(value), true);
   });
 });

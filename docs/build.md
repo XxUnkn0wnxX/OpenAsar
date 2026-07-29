@@ -85,6 +85,22 @@ All commands above produce:
 tmp/app.asar
 ```
 
+## Testing
+
+Run the focused VersionLock, updater-mode, manifest-cache, and logging tests with:
+
+```bash
+node --test tests/index-updater-mode.test.js tests/version-lock-*.test.js
+```
+
+Run the full repository test suite with:
+
+```bash
+node --test tests/*.test.js
+```
+
+The automated platform fixtures cover macOS, Windows, and Linux mappings without touching live Discord installations. Only macOS has received live VersionLock testing; Windows and Linux behavior remains untested outside the fixtures.
+
 ## Optional GitHub Workflows
 The default upstream workflow remains in `.github/workflows/nightly.yml`.
 

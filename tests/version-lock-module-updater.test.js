@@ -47,7 +47,7 @@ describe('moduleUpdater version lock behavior', () => {
     const fakeGet = (url, cb) => {
       getCalls.push(url);
       const emitter = new EventEmitter();
-      emitter.statusCode = 200;
+      emitter.statusCode = url.includes('/updates/') ? 204 : 200;
       emitter.headers = {};
       if (cb) cb(emitter);
       process.nextTick(() => {
@@ -88,9 +88,12 @@ describe('moduleUpdater version lock behavior', () => {
 
   const waitForChecked = updater => new Promise(resolve => updater.events.once('checked', resolve));
 
+  const setPlatform = value => {
+    Object.defineProperty(process, 'platform', { ...originalPlatform, value });
+  };
+
   beforeEach(() => {
     originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
-    Object.defineProperty(process, 'platform', { ...originalPlatform, value: 'darwin' });
   });
 
   afterEach(() => {
@@ -104,36 +107,55 @@ describe('moduleUpdater version lock behavior', () => {
     root = undefined;
   });
 
-  test('skips host check and still requests module versions with lock enabled', async () => {
-    const updater = makeFixture();
-    const endpoint = 'https://discord.com/api';
-    const checked = waitForChecked(updater);
+  for (const [ platform, expected ] of [
+    [ 'darwin', 'osx' ],
+    [ 'win32', 'win' ],
+    [ 'linux', 'linux' ]
+  ]) {
+    test(`uses ${expected} platform mapping on ${platform} with lock`, async () => {
+      setPlatform(platform);
+      const updater = makeFixture();
+      const endpoint = 'https://discord.com/api';
+      const checked = waitForChecked(updater);
 
-    updater.init(endpoint, { releaseChannel: 'stable', version: '0.0.402' }, '0.0.402');
-    updater.checkForUpdates();
-    const event = await checked;
+      updater.init(endpoint, { releaseChannel: 'stable', version: '0.0.402' }, '0.0.402');
+      updater.checkForUpdates();
+      const event = await checked;
 
-    assert.equal(hostCheckCalls, 0);
-    assert.equal(fakeSetFeed?.includes('/updates/stable?platform=osx&version=0.0.402'), true);
-    assert.equal(getCalls.length, 1);
-    assert.equal(getCalls[0], 'https://discord.com/api/modules/stable/versions.json?host_version=0.0.402&platform=osx');
-    assert.equal(getCalls[0], endpoint + '/modules/stable/versions.json?host_version=0.0.402&platform=osx');
-    assert.equal(event.count, 0);
-  });
+      assert.equal(hostCheckCalls, 0);
+      if (platform === 'linux') {
+        assert.equal(fakeSetFeed, undefined);
+      } else {
+        assert.equal(fakeSetFeed?.includes(`/updates/stable?platform=${expected}&version=0.0.402`), true);
+      }
+      assert.equal(getCalls.length, 1);
+      assert.equal(getCalls[0], endpoint + `/modules/stable/versions.json?host_version=0.0.402&platform=${expected}`);
+      assert.equal(event.count, 0);
+    });
 
-  test('keeps host+module checks when lock is absent', async () => {
-    const updater = makeFixture();
-    const endpoint = 'https://discord.com/api';
-    const checked = waitForChecked(updater);
+    test(`keeps host+module checks on ${platform} when lock is absent`, async () => {
+      setPlatform(platform);
+      const updater = makeFixture();
+      const endpoint = 'https://discord.com/api';
+      const checked = waitForChecked(updater);
 
-    updater.init(endpoint, { releaseChannel: 'stable', version: '0.0.402' });
-    updater.checkForUpdates();
-    const event = await checked;
+      updater.init(endpoint, { releaseChannel: 'stable', version: '0.0.402' });
+      updater.checkForUpdates();
+      const event = await checked;
 
-    assert.equal(hostCheckCalls, 1);
-    assert.equal(fakeSetFeed?.includes('/updates/stable?platform=osx&version=0.0.402'), true);
-    assert.equal(getCalls.length, 1);
-    assert.equal(getCalls[0], 'https://discord.com/api/modules/stable/versions.json?host_version=0.0.402&platform=osx');
-    assert.equal(event.count, 0);
-  });
+      if (platform === 'linux') {
+        assert.equal(hostCheckCalls, 0);
+        assert.equal(fakeSetFeed, undefined);
+        assert.equal(getCalls.length, 2);
+        assert.equal(getCalls[0], endpoint + `/updates/stable?platform=${expected}&version=0.0.402`);
+        assert.equal(getCalls[1], endpoint + `/modules/stable/versions.json?host_version=0.0.402&platform=${expected}`);
+      } else {
+        assert.equal(hostCheckCalls, 1);
+        assert.equal(fakeSetFeed?.includes(`/updates/stable?platform=${expected}&version=0.0.402`), true);
+        assert.equal(getCalls.length, 1);
+        assert.equal(getCalls[0], endpoint + `/modules/stable/versions.json?host_version=0.0.402&platform=${expected}`);
+      }
+      assert.equal(event.count, 0);
+    });
+  }
 });

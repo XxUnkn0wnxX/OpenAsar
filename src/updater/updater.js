@@ -8,6 +8,7 @@ const { hrtime } = require('process');
 
 const paths = require('../paths');
 const { detectBetterDiscordWrapper, getOpenAsarArchivePath } = require('../injection');
+const { getNativeUpdaterPlatform, getNativeUpdaterArch } = require('../utils/updaterIdentity');
 
 let instance;
 let currentVersion;
@@ -957,6 +958,10 @@ class Updater extends require('events').EventEmitter {
     return this._handleSyncResponse(this._sendRequestSync({
       SetManifests: ['Pinned', manifest]
     }));
+  }
+
+  clearPinnedManifestSync() {
+    return this.setPinnedManifestSync(null);
   }
 
   installModule(name, progressCallback) {
@@ -1948,27 +1953,6 @@ clear_pending_update_marker
 log "Post-ShipIt helper complete"
 `;
 
-const getCurrentArch = () => {
-  if (process.platform === 'win32') {
-    return ['AMD64', 'IA64'].includes(process.env.PROCESSOR_ARCHITEW6432 ?? process.env.PROCESSOR_ARCHITECTURE) ? 'x64' : 'x86';
-  }
-
-  if (process.platform === 'darwin') {
-    return execSync('uname -m').toString().trim() === 'arm64' ? 'arm64' : 'x64';
-  }
-
-  // linux (discord only support it anyway)
-  return 'x64';
-};
-
-const getPlatform = () => {
-  switch (process.platform) {
-    case 'darwin': return 'osx';
-    case 'win32': return 'win';
-    default: return process.platform;
-  }
-};
-
 module.exports = {
   Updater,
   TASK_STATE_COMPLETE,
@@ -1984,11 +1968,11 @@ module.exports = {
 
     const opts = {
       release_channel: buildInfo.releaseChannel,
-      platform: getPlatform(),
+      platform: getNativeUpdaterPlatform(),
       repository_url,
       root_path,
       user_data_path: paths.getUserData(),
-      current_os_arch: getCurrentArch(),
+      current_os_arch: getNativeUpdaterArch(),
       use_rust_bspatch: use_rust_bspatch === true
     };
 

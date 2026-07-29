@@ -2,13 +2,23 @@
 
 ## 2026-07-29
 
-### Legacy host version lock
+### Discord host version lock and launch logging
 
-- Added backend-only `openasar.VersionLock` with canonical shorthand/absolute parsing and empty-string default to support phase-1 legacy locking.
-- Added bootstrap preflight validation for legacy lock mode: when `openasar.forceLegacyUpdater` is `true`, a mismatched active lock fails closed before updater/splash with a clear error and `app.quit()`.
-- Kept lock values pass-through whenever `openasar.forceLegacyUpdater` is `false` so invalid/legacy-only values do not block current new-updater startup.
+- Added backend-only `openasar.VersionLock` with canonical shorthand/absolute parsing and an empty-string default for both legacy and native updater locking.
+- Added bootstrap preflight validation for both modes: a mismatched active lock fails closed before updater/splash with a native `OpenAsar` dialog showing the Discord binary and configured lock versions.
 - Routed `moduleUpdater.init` to consume a validated lock value directly per startup call instead of a mutable global, preserving existing `SKIP_HOST_UPDATE` compatibility.
-- Kept module-update behavior unchanged under a valid lock: only host checks are skipped, while module endpoint, `host_version`, download path, events, and lifecycle continue unchanged.
+- Kept legacy module-update behavior unchanged under a valid lock: only host checks are skipped, while module endpoint, `host_version`, download path, events, and lifecycle continue unchanged.
+- Added Windows/macOS/Linux legacy platform mapping instead of treating every non-macOS host as Linux.
+- Added new-updater pinning through Discord's native `SetManifests(Pinned, ...)` path before first-run or splash update work.
+- Added exact raw-manifest validation, cache reuse, HTTPS refresh, and atomic replacement at `<user-data>/pinned_update.json`; wrong-version or invalid server responses fail closed and never replace a valid cache.
+- Added a full-only manifest reconstruction fallback for historical locks: a current native manifest supplies schema/policy, the target module feed supplies module versions, and every official target package is streamed and SHA-256 hashed before the rebuilt manifest can replace the cache.
+- Kept native repair behavior intact after updater-state cleanup. Discord may download and retain a complete staged host alongside its modules because an empty `installer.db` cannot establish a current version without that host record; OpenAsar deliberately suppresses activation rather than this required recovery download.
+- Suppressed staged-host activation on every locked new-updater launch across platforms while still committing modules and running garbage collection: no macOS ShipIt activation and no Windows/Linux restart into the staged executable.
+- Clear persisted native `Pinned` state when `VersionLock` is blank so normal Discord update handling resumes.
+- Added a per-launch JSON Lines log at `<user-data>/openasar-bootstrap/version-lock.log`; it is overwritten on startup and clearly records `updaterMode` as `legacy` or `new`.
+- Made `openasar.forceLegacyUpdater` synchronize top-level `USE_NEW_UPDATER` in both directions during every startup on all platforms: `false` selects `true`, while `true` selects `false`; only the separate self-healing/bootstrap helper remains macOS-only.
+- Kept automatic Discord host upgrade/downgrade out of scope; users must install a matching binary before enabling or changing a lock.
+- Designed VersionLock and its logging to be platform-neutral. Only macOS has been tested; Windows and Linux support remains theoretical, while the existing self-healing helper stays macOS-only.
 - Preserved the active lock in backend-only config handling so remote config writes cannot clear it.
 
 ## 2026-07-16
