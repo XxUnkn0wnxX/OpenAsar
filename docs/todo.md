@@ -1,4 +1,4 @@
-# OpenAsar TODO
+# 💡 OpenAsar TODO
 
 Ideas to investigate for this fork. These are not committed features or implementation plans.
 

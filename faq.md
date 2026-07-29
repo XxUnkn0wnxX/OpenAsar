@@ -1,4 +1,4 @@
-# OpenAsar FAQ
+# ❓ OpenAsar FAQ
 
 ### What is an asar?
 An asar is a format for [Electron](https://electronjs.org), commonly used for the first part of apps as `app.asar`. Discord's `app.asar` includes various parts like:

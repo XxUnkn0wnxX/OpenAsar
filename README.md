@@ -3,7 +3,7 @@
 
 **An open-source alternative of Discord desktop's `app.asar`**
 
-## Features
+## ✨ Features
 - **:rocket: Startup Speed**: ~2x faster startup times (up to ~4x with experimental config)
 - **:chart_with_upwards_trend: Performance**: OpenAsar can make your client feel snappier (scrolling, switching channels, etc)
 - **:paintbrush: Splash Theming**: Easy theming for your splash which works with most themes for any client mod
@@ -14,28 +14,26 @@
 - **:jigsaw: BetterDiscord Compatible**: Detects the BetterDiscord fork's validated app wrapper, keeps OpenAsar in `Resources/betterdiscord.app.asar`, and retains normal `Resources/app.asar` behavior when no wrapper is present
 - **:package: macOS Bootstrap Safe**: Handles Discord's newer ShipIt host-app bootstrap and legacy macOS host replacements with generation-owned payloads and a PID-managed helper; normal quits repair only when needed and stay closed
 
-### See [FAQ](faq.md) for more details
+### ❓ See [FAQ](faq.md) for more details
 
-<br>
-
-## [Install Guide](https://github.com/GooseMod/OpenAsar/wiki/Install-Guide)
+## 📥 [Install Guide](https://github.com/GooseMod/OpenAsar/wiki/Install-Guide)
 
 The [Discord install manager](https://github.com/XxUnkn0wnxX/Scripts/blob/develop/shell/discord_install_manager.zsh) integration is macOS-only ([documentation](https://github.com/XxUnkn0wnxX/Scripts/blob/develop/docs/discord-install-manager.md)). Its `--BD` mode requires `--openasar` or `--openasar-source`, preserves a valid BetterDiscord wrapper, and replaces only its nested OpenAsar payload. It falls back to `Resources/app.asar` only when no wrapper is present, refuses partial wrappers, and cannot be combined with `--update`.
 
-## Local Build
+## 🏭 Local Build
 See [docs/build.md](docs/build.md) for local build instructions, including local test builds with `--disable-autoupdate`.
 
-## Architecture
+## 🧭 Architecture
 
 See [docs/architecture.md](docs/architecture.md) for the fork's startup, updater, VersionLock, BetterDiscord, recovery, build, and validation boundaries.
 
-## Changelog
+## 📝 Changelog
 See [docs/changelog.md](docs/changelog.md) for the current local work log / changelog.
 
-## TODO
+## 💡 TODO
 See [docs/todo.md](docs/todo.md) for a short list of future ideas for this fork.
 
-## Config
+## ⚙️ Config
 
 You can configure OpenAsar by clicking the "OpenAsar..." version info in the bottom of your settings sidebar, which will open the config window.
 

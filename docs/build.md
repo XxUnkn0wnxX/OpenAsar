@@ -1,4 +1,4 @@
-# Local Build
+# 🏭 Local Build
 
 The GitHub nightly workflows build OpenAsar with `scripts/pack.js`, which:
 
@@ -8,7 +8,7 @@ The GitHub nightly workflows build OpenAsar with `scripts/pack.js`, which:
 
 Local builds use the same script without modifying the working tree in place.
 
-## Requirements
+## ✅ Requirements
 - `node`
 - `asar`
 
@@ -18,7 +18,7 @@ Example install for `asar`:
 npm i -g asar
 ```
 
-## Build With Normal Auto-Update Behavior
+## 🔄 Build With Normal Auto-Update Behavior
 This keeps the default OpenAsar self-update behavior enabled.
 
 ```bash
@@ -31,14 +31,14 @@ This build updates from the default upstream release repo:
 GooseMod/OpenAsar
 ```
 
-## Build With A Custom Update Repo
+## 📦 Build With A Custom Update Repo
 Use this when you want a build to self-update from your own fork releases instead of upstream.
 
 ```bash
 node scripts/pack.js --update-repo owner/repo --version nightly-$(git rev-parse --short HEAD) --output tmp/app.asar
 ```
 
-## Build With Auto-Update Disabled
+## 🚫 Build With Auto-Update Disabled
 Use this for local testing when you do not want the built `app.asar` to replace itself with the upstream nightly release on launch.
 
 ```bash
@@ -52,7 +52,7 @@ The local wrapper accepts the same optional build arguments:
 ./local-build-no-autoupdate.zsh --help
 ```
 
-## Optional macOS Recovery Timeout
+## 🍎 Optional macOS Recovery Timeout
 The macOS post-update helper uses a 90-second recovery window by default. Override that build-time value with a positive integer when a different timeout is needed:
 
 ```bash
@@ -78,14 +78,14 @@ packer.
 
 This changes only the three long macOS recovery paths. The standalone legacy wait uses the configured window exactly, while the standalone guard keeps its existing 30-second wait. When BetterDiscord is detected, OpenAsar adds a 10-second coordination grace so matching recovery windows do not race. Keep OpenAsar's configured window at least as long as BetterDiscord's; the normal 90-second defaults therefore coordinate for up to 100 seconds. Other updater timers are unchanged.
 
-## Output
+## 📤 Output
 All commands above produce:
 
 ```text
 tmp/app.asar
 ```
 
-## Testing
+## 🧪 Testing
 
 Run the focused VersionLock, updater-mode, manifest-cache, and logging tests with:
 
@@ -101,7 +101,7 @@ node --test tests/*.test.js
 
 The automated platform fixtures cover macOS, Windows, and Linux mappings without touching live Discord installations. Only macOS has received live VersionLock testing; Windows and Linux behavior remains untested outside the fixtures.
 
-## Optional GitHub Workflows
+## ⚙️ Optional GitHub Workflows
 
 This fork keeps three workflow variants:
 

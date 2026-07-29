@@ -1,8 +1,8 @@
-# OpenAsar Config
+# ⚙️ OpenAsar Config
 
 OpenAsar stores its config under the `openasar` object in the current Discord channel's `settings.json`. Missing default keys are filled on startup without overwriting existing values.
 
-## Config UI Mapping
+## 🧭 Config UI Mapping
 
 Some settings are exposed through the OpenAsar config window:
 
@@ -16,7 +16,7 @@ Some settings are exposed through the OpenAsar config window:
 
 Other keys are manual/backend options that can be edited directly in `settings.json`.
 
-## Options
+## 🧩 Options
 
 ### `setup`
 
