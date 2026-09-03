@@ -1,13 +1,15 @@
 const { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } = require('fs');
 const { join, resolve } = require('path');
 const { spawnSync } = require('child_process');
+const { resolveUpdateChannel, resolveUpdateRepository } = require('./updateRepo');
 
 const root = resolve(__dirname, '..');
 const tmpRoot = join(root, 'tmp', 'pack-build');
 
 const args = process.argv.slice(2);
 let disableAutoUpdate = false;
-let updateRepo = 'GooseMod/OpenAsar';
+let updateRepo;
+let updateRepoExplicit = false;
 let version;
 let output = join(root, 'tmp', 'openasar-build', 'app.asar');
 let macOSRecoveryTimeoutSeconds = process.env.OPENASAR_MACOS_RECOVERY_TIMEOUT_SECONDS ?? '90';
@@ -27,6 +29,7 @@ for (let i = 0; i < args.length; i++) {
 
   if (arg === '--update-repo') {
     updateRepo = args[++i];
+    updateRepoExplicit = true;
     continue;
   }
 
@@ -48,7 +51,14 @@ for (let i = 0; i < args.length; i++) {
   throw new Error(`Unknown argument: ${arg}`);
 }
 
-if (!/^[^/\s]+\/[^/\s]+$/.test(updateRepo)) throw new Error(`Invalid --update-repo value: ${updateRepo}`);
+const updateRepositoryResolution = resolveUpdateRepository({
+  cwd: root,
+  env: process.env,
+  ...(updateRepoExplicit ? { cliValue: updateRepo } : {})
+});
+updateRepo = updateRepositoryResolution.repository;
+const updateChannel = resolveUpdateChannel(updateRepo);
+console.log(`Resolved update repository ${updateRepo} (source: ${updateRepositoryResolution.source}, channel: ${updateChannel})`);
 
 const parsedMacOSRecoveryTimeoutSeconds = Number(macOSRecoveryTimeoutSeconds);
 if (!/^[1-9]\d*$/.test(String(macOSRecoveryTimeoutSeconds)) || !Number.isSafeInteger(parsedMacOSRecoveryTimeoutSeconds)) {
@@ -143,6 +153,7 @@ let indexCode = readFileSync(indexPath, 'utf8');
 indexCode = indexCode.replace("global.oaVersion = 'nightly';", `global.oaVersion = '${version}';`);
 indexCode = indexCode.replace('<disableAutoUpdate>', disableAutoUpdate ? 'true' : 'false');
 indexCode = indexCode.replaceAll('<updateRepo>', updateRepo);
+indexCode = indexCode.replaceAll('<updateChannel>', updateChannel);
 writeFileSync(indexPath, indexCode);
 
 const updaterPath = join(tmpRoot, 'src', 'updater', 'updater.js');

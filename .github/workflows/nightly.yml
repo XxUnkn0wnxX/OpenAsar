@@ -14,6 +14,9 @@ on:
   #   - 'scripts/**'
   #   - '.github/workflows/**'
 
+permissions:
+  contents: read
+
 env:
   OPENASAR_MACOS_RECOVERY_TIMEOUT_SECONDS: ${{ inputs.macos_recovery_timeout_seconds || '55' }}
 
@@ -33,7 +36,7 @@ jobs:
     - name: Pack base asar
       run: |
         npm i -g asar
-        node scripts/pack.js --version nightly-$(git rev-parse HEAD | cut -c 1-7) --output app.asar
+        node scripts/pack.js --update-repo GooseMod/OpenAsar --version nightly-$(git rev-parse HEAD | cut -c 1-7) --output app.asar
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -340,6 +343,8 @@ jobs:
       # - test-linux
       # - test-win
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
     - uses: actions/checkout@v2

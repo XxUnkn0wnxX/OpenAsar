@@ -8,6 +8,9 @@ on:
         default: '55'
         type: string
 
+permissions:
+  contents: read
+
 env:
   OPENASAR_MACOS_RECOVERY_TIMEOUT_SECONDS: ${{ inputs.macos_recovery_timeout_seconds || '55' }}
 
@@ -333,6 +336,8 @@ jobs:
       # - test-linux
       # - test-win
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
     - uses: actions/checkout@v2

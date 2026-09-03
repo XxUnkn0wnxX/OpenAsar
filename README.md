@@ -1,5 +1,5 @@
 # OpenAsar &nbsp;<sup><sub>/ˈoʊpən ʌsɑr/ &nbsp;*(o-pen as-are)*</sup></sub>
-![Nightly Status](https://github.com/XxUnkn0wnxX/OpenAsar/actions/workflows/nightly-custom-update-repo.yml/badge.svg) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://choosealicense.com/licenses/agpl-3.0/)
+[Nightly Fork workflow](.github/workflows/nightly-custom-update-repo.yml) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://choosealicense.com/licenses/agpl-3.0/)
 
 **An open-source alternative of Discord desktop's `app.asar`**
 
@@ -22,7 +22,8 @@
 The [Discord install manager](https://github.com/XxUnkn0wnxX/Scripts/blob/develop/shell/discord_install_manager.zsh) integration is macOS-only ([documentation](https://github.com/XxUnkn0wnxX/Scripts/blob/develop/docs/discord-install-manager.md)). Its `--BD` mode requires `--openasar` or `--openasar-source`, preserves a valid BetterDiscord wrapper, and replaces only its nested OpenAsar payload. It falls back to `Resources/app.asar` only when no wrapper is present, refuses partial wrappers, and cannot be combined with `--update`.
 
 ## 🏭 Local Build
-See [docs/build.md](docs/build.md) for local build instructions, including local test builds with `--disable-autoupdate`.
+
+See [docs/build.md](docs/build.md) for fork-aware local builds and local test builds with `--disable-autoupdate`. The automatic Nightly Fork workflow derives the repository where it runs, while local builds derive a GitHub repository from `origin`; neither path requires a maintainer-specific repository edit.
 
 ## 🧭 Architecture
 

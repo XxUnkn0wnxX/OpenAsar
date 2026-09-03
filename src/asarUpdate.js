@@ -14,7 +14,9 @@ const redirs = url => new Promise(res => get(url, r => { // Minimal wrapper arou
 module.exports = async () => { // (Try) update asar
   if (global.oaDisableAutoUpdate) return log('AsarUpdate', 'Skipping build-configured auto-update disable');
   if (!oaVersion.includes('-')) return;
-  const releaseChannel = oaVersion.split('-')[0];
+  const releaseChannel = global.oaUpdateChannel && !String(global.oaUpdateChannel).startsWith('<')
+    ? global.oaUpdateChannel
+    : oaVersion.split('-')[0];
   const updateRepo = global.oaUpdateRepo || 'GooseMod/OpenAsar';
 
   log('AsarUpdate', 'Updating...');

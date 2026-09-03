@@ -14,8 +14,10 @@ on:
         default: '55'
         type: string
 
+permissions:
+  contents: read
+
 env:
-  UPDATE_REPO: 'XxUnkn0wnxX/OpenAsar' # Default fork repo for this checkout.
   OPENASAR_MACOS_RECOVERY_TIMEOUT_SECONDS: ${{ inputs.macos_recovery_timeout_seconds || '55' }}
 
 jobs:
@@ -31,17 +33,10 @@ jobs:
       with:
         node-version: 20.x
 
-    - name: Validate update repo
-      run: |
-        if [ "${{ env.UPDATE_REPO }}" = "owner/repo" ]; then
-          echo "Set UPDATE_REPO to your fork before running this workflow."
-          exit 1
-        fi
-
     - name: Pack fork-update asar
       run: |
         npm i -g asar
-        node scripts/pack.js --update-repo "${{ env.UPDATE_REPO }}" --version nightly-$(git rev-parse HEAD | cut -c 1-7) --output app.asar
+        node scripts/pack.js --version nightly-$(git rev-parse HEAD | cut -c 1-7) --output app.asar
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -347,6 +342,8 @@ jobs:
       # - test-linux
       # - test-win
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
     - uses: actions/checkout@v2

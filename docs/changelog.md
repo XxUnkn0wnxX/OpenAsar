@@ -1,5 +1,15 @@
 # 📝 Changelog
 
+## 2026-09-03
+
+### Fork-aware packaging and releases
+
+- Derived a validated update repository from explicit build input, a namespaced environment override, GitHub Actions, or the checkout's GitHub `origin`, with `GooseMod/OpenAsar` retained as the source-archive fallback.
+- Stamped `nightly` for upstream builds and `nightly-fork` for fork builds so the self-updater downloads the release that each workflow actually publishes.
+- Removed the maintainer-specific repository from the automatic fork workflow and declared least-privilege release permissions for fresh forks.
+- Kept the local zsh test builder on its existing no-auto-update path while allowing the shared packer to derive and report its repository identity.
+- Added isolated resolver, pack-stamping, and updater-routing coverage without network access or writes to a live OpenAsar installation.
+
 ## 2026-07-29
 
 ### Discord host version lock and launch logging

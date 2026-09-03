@@ -337,8 +337,9 @@ The paths retry independently every 800 ms, so a missing footer does not prevent
 
 OpenAsar's ASAR self-updater is not Discord's host updater and is not VersionLock:
 
-- [`src/asarUpdate.js`](../src/asarUpdate.js) derives the release channel from the stamped OpenAsar build version.
-- Normal source builds default to `GooseMod/OpenAsar`; `scripts/pack.js --update-repo owner/repo` stamps another release repository.
+- [`src/asarUpdate.js`](../src/asarUpdate.js) uses the build-stamped release channel, retaining version-prefix derivation only for compatibility with an older or unstamped build.
+- [`scripts/pack.js`](../scripts/pack.js) resolves one validated update repository from an explicit option, a namespaced environment override, trusted GitHub Actions identity, the local GitHub `origin`, or finally `GooseMod/OpenAsar`.
+- The upstream repository uses `nightly`; every non-upstream repository uses the stable rolling `nightly-fork` release published by the fork workflow.
 - `--disable-autoupdate` stamps `global.oaDisableAutoUpdate`, which prevents this self-update path without disabling Discord host/module updating.
 - A downloaded release must look like an ASAR before it is written.
 - [`getOpenAsarArchivePath`](../src/injection.js) selects the exact running archive, so standalone installs update `app.asar` and validated BetterDiscord installs update `betterdiscord.app.asar`.
@@ -353,7 +354,7 @@ Do not use `VersionLock` to reason about this path: `VersionLock` controls Disco
 
 1. remove and recreate `tmp/pack-build`;
 2. copy `src/` into `tmp/pack-build/src`;
-3. stamp OpenAsar version, self-update disable state, update repository, and macOS recovery timeout;
+3. stamp OpenAsar version, self-update disable state, update repository, update channel, and macOS recovery timeout;
 4. protect template literals, including the embedded zsh helper, while stripping the copied tree;
 5. pack the copy to the requested ASAR output.
 
@@ -363,22 +364,25 @@ Supported controls are:
 
 - `--disable-autoupdate`
 - `--update-repo <owner/repo>`
+- `OPENASAR_UPDATE_REPO` when the CLI repository is absent
+- trusted `GITHUB_REPOSITORY` when `GITHUB_ACTIONS=true`
+- the checkout's valid GitHub `origin` when no explicit or Actions identity resolves
 - `--version <value>`
 - `--output <path>`
 - `--macos-recovery-timeout-seconds <seconds>`
 - `OPENASAR_MACOS_RECOVERY_TIMEOUT_SECONDS` when the CLI timeout is absent
 
-[`local-build-no-autoupdate.zsh`](../local-build-no-autoupdate.zsh) produces `tmp/app.asar` with self-update disabled, a `nightly-<short-sha>-localtest` version, and optional `-mrts`/long-form recovery timeout forwarding.
+[`local-build-no-autoupdate.zsh`](../local-build-no-autoupdate.zsh) produces `tmp/app.asar` with self-update disabled, a `nightly-<short-sha>-localtest` version, automatic local `origin` resolution, and optional repository/recovery-timeout forwarding. Repository stamping does not reactivate the disabled self-updater.
 
 ### Workflow variants
 
 | Workflow | Trigger | Build distinction |
 |---|---|---|
-| [`nightly.yml`](../.github/workflows/nightly.yml) | Manual | Normal self-update behavior and default update repo. |
+| [`nightly.yml`](../.github/workflows/nightly.yml) | Manual | Normal self-update behavior explicitly following the upstream `GooseMod/OpenAsar` `nightly` release. |
 | [`nightly-disable-autoupdate.yml`](../.github/workflows/nightly-disable-autoupdate.yml) | Manual | Packs with `--disable-autoupdate`; publishes the no-auto-update release variant. |
-| [`nightly-custom-update-repo.yml`](../.github/workflows/nightly-custom-update-repo.yml) | `develop` pushes affecting source/scripts/workflows, or manual | Stamps `XxUnkn0wnxX/OpenAsar`; publishes the fork release variant. |
+| [`nightly-custom-update-repo.yml`](../.github/workflows/nightly-custom-update-repo.yml) | `develop` pushes affecting source/scripts/workflows, or manual | Stamps the workflow's `GITHUB_REPOSITORY`; publishes that repository's `nightly-fork` release variant. |
 
-All three use `scripts/pack.js` and define Linux Stable/Canary plus Windows Stable/Canary startup smoke jobs. Current Linux archives are bootstrap packages, so the workflows run `updater_bootstrap --no-zenity`, discover the resulting `app-*` tree, inject the built ASAR, launch under Xvfb, poll for the bounded `ABRA` marker, and clean up the process explicitly.
+All three use `scripts/pack.js`, default to read-only repository permissions, grant `contents: write` only to their release jobs, and define Linux Stable/Canary plus Windows Stable/Canary startup smoke jobs. Current Linux archives are bootstrap packages, so the workflows run `updater_bootstrap --no-zenity`, discover the resulting `app-*` tree, inject the built ASAR, launch under Xvfb, poll for the bounded `ABRA` marker, and clean up the process explicitly.
 
 The release jobs currently depend only on `build`; their smoke-test dependencies are commented out. The smoke jobs provide CI evidence but are not release gates unless those `needs` entries are restored.
 
@@ -388,6 +392,9 @@ The architecture-critical suites are:
 
 | Test file | Contract |
 |---|---|
+| [`tests/update-repo-resolution.test.js`](../tests/update-repo-resolution.test.js) | GitHub remote parsing, resolution precedence/fallback, and upstream-versus-fork update channels. |
+| [`tests/pack-update-repo.test.js`](../tests/pack-update-repo.test.js) | Isolated end-to-end pack stamping for local origin, Actions, environment, and CLI repository sources. |
+| [`tests/asar-update-routing.test.js`](../tests/asar-update-routing.test.js) | Fork release URL selection, legacy channel fallback, ASAR target writes, and build-configured updater disable. |
 | [`tests/index-updater-mode.test.js`](../tests/index-updater-mode.test.js) | Bidirectional updater-mode persistence, startup order, and macOS guard gating. |
 | [`tests/version-lock-validation.test.js`](../tests/version-lock-validation.test.js) | Empty/shorthand/absolute parsing, updater mode, mismatch handling, and dialog text. |
 | [`tests/version-lock-module-updater.test.js`](../tests/version-lock-module-updater.test.js) | Legacy host suppression, module continuity, and macOS/Windows/Linux platform mapping. |

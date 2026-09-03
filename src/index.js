@@ -6,9 +6,12 @@ global.log = (area, ...args) => console.log(`[\x1b[38;2;88;101;242mOpenAsar\x1b[
 
 const defaultUpdateRepo = 'GooseMod/OpenAsar';
 const stampedUpdateRepo = '<updateRepo>';
+const defaultUpdateChannel = 'nightly';
+const stampedUpdateChannel = '<updateChannel>';
 global.oaVersion = 'nightly';
 global.oaDisableAutoUpdate = '<disableAutoUpdate>' === 'true';
 global.oaUpdateRepo = stampedUpdateRepo.startsWith('<') ? defaultUpdateRepo : stampedUpdateRepo;
+global.oaUpdateChannel = stampedUpdateChannel.startsWith('<') ? defaultUpdateChannel : stampedUpdateChannel;
 
 log('Init', 'OpenAsar', oaVersion);
 
