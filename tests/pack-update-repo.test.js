@@ -53,9 +53,11 @@ fs.writeFileSync(output, fs.readFileSync(path.join(source, 'index.js')));
   return { root, bin };
 };
 
-const runPackScenario = ({ env: scenarioEnv, expectedChannel, expectedRepository, expectedSource, cliArgs = [] }) => {
+const runPackScenario = ({ env: scenarioEnv, expectedChannel, expectedRepository, expectedSource, cliArgs = [], useDefaultOutput = false }) => {
   const fixture = makeFixture();
-  const output = path.join(fixture.root, 'out', 'app.asar');
+  const output = useDefaultOutput
+    ? path.join(fixture.root, '.tmp', 'openasar-build', 'app.asar')
+    : path.join(fixture.root, 'out', 'app.asar');
   const env = { ...process.env };
   delete env.OPENASAR_UPDATE_REPO;
   delete env.GITHUB_ACTIONS;
@@ -72,10 +74,10 @@ const runPackScenario = ({ env: scenarioEnv, expectedChannel, expectedRepository
 
     const stdout = execFileSync(
       process.execPath,
-      [path.join(fixture.root, 'scripts', 'pack.js'), ...cliArgs, '--version', 'nightly-test', '--output', output],
+      [path.join(fixture.root, 'scripts', 'pack.js'), ...cliArgs, '--version', 'nightly-test', ...(useDefaultOutput ? [] : ['--output', output])],
       { cwd: fixture.root, encoding: 'utf8', env }
     );
-    const stampedIndex = fs.readFileSync(path.join(fixture.root, 'tmp', 'pack-build', 'src', 'index.js'), 'utf8');
+    const stampedIndex = fs.readFileSync(path.join(fixture.root, '.tmp', 'pack-build', 'src', 'index.js'), 'utf8');
     const packedOutput = fs.readFileSync(output, 'utf8');
     const expectedRepositoryAssignment = `global.oaUpdateRepo='${expectedRepository}'`;
     const expectedChannelAssignment = `global.oaUpdateChannel='${expectedChannel}'`;
@@ -90,6 +92,7 @@ const runPackScenario = ({ env: scenarioEnv, expectedChannel, expectedRepository
     assert.doesNotMatch(stampedIndex, /<(?:updateRepo|updateChannel|disableAutoUpdate)>/);
     assert.doesNotMatch(packedOutput, /<(?:updateRepo|updateChannel|disableAutoUpdate)>/);
     assert.equal(fs.existsSync(output), true);
+    assert.equal(fs.existsSync(path.join(fixture.root, 'tmp')), false);
   } finally {
     fs.rmSync(fixture.root, { recursive: true, force: true });
   }
@@ -105,7 +108,8 @@ test('pack.js resolves and stamps every repository precedence layer in an isolat
     runPackScenario({
       expectedChannel: 'nightly-fork',
       expectedRepository: 'LocalFork/OpenAsar',
-      expectedSource: 'origin'
+      expectedSource: 'origin',
+      useDefaultOutput: true
     });
     runPackScenario({
       env: {

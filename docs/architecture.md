@@ -329,7 +329,7 @@ Locked native launches bypass this activation/restart branch through `allowObsol
 - [`injectVersionInfo`](../src/mainWindow.js) finds native compact/version/build text first, older native Host lines next, and BetterDiscord `.bd-version-info` only as a fallback.
 - [`injectSettingsItem`](../src/mainWindow.js) prefers Discord's current Language & Time row, then the App Settings section, then older Advanced/layout fallbacks.
 
-Both paths clone native nodes and classes instead of hard-coding a complete Discord component. The settings row receives stable OpenAsar IDs, the goose SVG, and the `DISCORD_UPDATED_QUOTES` IPC action that opens the config window.
+Both paths clone native nodes and classes instead of hard-coding a complete Discord component. The settings row receives stable OpenAsar IDs, the goose SVG, and the `DISCORD_UPDATED_QUOTES` IPC action that opens the config window. Its label supports both older text classes and Discord's `data-text-variant` markup, so the cloned row is renamed correctly with or without BetterDiscord.
 
 The paths retry independently every 800 ms, so a missing footer does not prevent the settings item and a Discord/BetterDiscord rerender can be repaired on the next interval.
 
@@ -352,8 +352,8 @@ Do not use `VersionLock` to reason about this path: `VersionLock` controls Disco
 
 [`scripts/pack.js`](../scripts/pack.js) never strips or stamps the tracked `src/` tree in place:
 
-1. remove and recreate `tmp/pack-build`;
-2. copy `src/` into `tmp/pack-build/src`;
+1. remove and recreate `.tmp/pack-build`;
+2. copy `src/` into `.tmp/pack-build/src`;
 3. stamp OpenAsar version, self-update disable state, update repository, update channel, and macOS recovery timeout;
 4. protect template literals, including the embedded zsh helper, while stripping the copied tree;
 5. pack the copy to the requested ASAR output.
@@ -372,7 +372,7 @@ Supported controls are:
 - `--macos-recovery-timeout-seconds <seconds>`
 - `OPENASAR_MACOS_RECOVERY_TIMEOUT_SECONDS` when the CLI timeout is absent
 
-[`local-build-no-autoupdate.zsh`](../local-build-no-autoupdate.zsh) produces `tmp/app.asar` with self-update disabled, a `nightly-<short-sha>-localtest` version, automatic local `origin` resolution, and optional repository/recovery-timeout forwarding. Repository stamping does not reactivate the disabled self-updater.
+[`local-build-no-autoupdate.zsh`](../local-build-no-autoupdate.zsh) produces `.tmp/app.asar` with self-update disabled, a `nightly-<short-sha>-localtest` version, automatic local `origin` resolution, and optional repository/recovery-timeout forwarding. Repository stamping does not reactivate the disabled self-updater.
 
 ### Workflow variants
 

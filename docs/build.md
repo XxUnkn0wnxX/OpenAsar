@@ -24,7 +24,7 @@ npm i -g asar
 This keeps the default OpenAsar self-update behavior enabled.
 
 ```bash
-node scripts/pack.js --version nightly-$(git rev-parse --short HEAD) --output tmp/app.asar
+node scripts/pack.js --version nightly-$(git rev-parse --short HEAD) --output .tmp/app.asar
 ```
 
 The packer resolves the update repository in this order:
@@ -44,13 +44,13 @@ A normal clone or fork therefore needs no repository argument. Source archives, 
 Use this when you want a build to self-update from your own fork releases instead of upstream.
 
 ```bash
-node scripts/pack.js --update-repo owner/repo --version nightly-$(git rev-parse --short HEAD) --output tmp/app.asar
+node scripts/pack.js --update-repo owner/repo --version nightly-$(git rev-parse --short HEAD) --output .tmp/app.asar
 ```
 
 The equivalent environment override is:
 
 ```bash
-OPENASAR_UPDATE_REPO=owner/repo node scripts/pack.js --version nightly-$(git rev-parse --short HEAD) --output tmp/app.asar
+OPENASAR_UPDATE_REPO=owner/repo node scripts/pack.js --version nightly-$(git rev-parse --short HEAD) --output .tmp/app.asar
 ```
 
 The command-line option takes precedence over the environment and automatic sources. Invalid explicit command-line values fail the build; invalid environment or remote candidates fall through to the next source.
@@ -60,7 +60,7 @@ The command-line option takes precedence over the environment and automatic sour
 Use this for local testing when you do not want the built `app.asar` to replace itself from the resolved release repository on launch.
 
 ```bash
-node scripts/pack.js --disable-autoupdate --version nightly-$(git rev-parse --short HEAD)-localtest --output tmp/app.asar
+node scripts/pack.js --disable-autoupdate --version nightly-$(git rev-parse --short HEAD)-localtest --output .tmp/app.asar
 ```
 
 The local wrapper accepts the same optional build arguments. It still resolves and stamps the repository identity, but the stamped self-update route remains inactive because the wrapper always supplies `--disable-autoupdate`:
@@ -76,13 +76,13 @@ The local wrapper accepts the same optional build arguments. It still resolves a
 The macOS post-update helper uses a 90-second recovery window by default. Override that build-time value with a positive integer when a different timeout is needed:
 
 ```bash
-node scripts/pack.js --macos-recovery-timeout-seconds 60 --version nightly-$(git rev-parse --short HEAD) --output tmp/app.asar
+node scripts/pack.js --macos-recovery-timeout-seconds 60 --version nightly-$(git rev-parse --short HEAD) --output .tmp/app.asar
 ```
 
 The equivalent environment variable is:
 
 ```bash
-OPENASAR_MACOS_RECOVERY_TIMEOUT_SECONDS=60 node scripts/pack.js --version nightly-$(git rev-parse --short HEAD) --output tmp/app.asar
+OPENASAR_MACOS_RECOVERY_TIMEOUT_SECONDS=60 node scripts/pack.js --version nightly-$(git rev-parse --short HEAD) --output .tmp/app.asar
 ```
 
 An explicit command-line value takes precedence over the environment variable. The local no-auto-update wrapper also forwards this option:
@@ -103,7 +103,7 @@ This changes only the three long macOS recovery paths. The standalone legacy wai
 All commands above produce:
 
 ```text
-tmp/app.asar
+.tmp/app.asar
 ```
 
 ## 🧪 Testing

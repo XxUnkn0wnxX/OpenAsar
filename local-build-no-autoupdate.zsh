@@ -8,7 +8,7 @@ cd "$SCRIPT_DIR"
 usage() {
     print -r -- "Usage: ./local-build-no-autoupdate.zsh [options]"
     print -r -- ""
-    print -r -- "Builds tmp/app.asar with OpenAsar auto-update disabled."
+    print -r -- "Builds .tmp/app.asar with OpenAsar auto-update disabled."
     print -r -- ""
     print -r -- "Options:"
     print -r -- "  --update-repo <owner/repo>                 Override the auto-detected repository stamp"
@@ -40,12 +40,12 @@ for argument in "$@"; do
 done
 set -- "${normalized_args[@]}"
 
-mkdir -p tmp
+mkdir -p .tmp
 
 version="nightly-$(git rev-parse --short HEAD)-localtest"
 
 echo "Building OpenAsar with auto-update disabled..."
 echo "Version: $version"
-echo "Output: tmp/app.asar"
+echo "Output: .tmp/app.asar"
 
-node scripts/pack.js --disable-autoupdate --version "$version" --output tmp/app.asar "$@"
+node scripts/pack.js --disable-autoupdate --version "$version" --output .tmp/app.asar "$@"

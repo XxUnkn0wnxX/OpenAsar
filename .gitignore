@@ -4,6 +4,7 @@ src/package-lock.json
 _*
 miniSrc/
 tmp/
+.tmp/
 AGENTS.md
 .venv/
 

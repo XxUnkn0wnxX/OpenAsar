@@ -4,14 +4,14 @@ const { spawnSync } = require('child_process');
 const { resolveUpdateChannel, resolveUpdateRepository } = require('./updateRepo');
 
 const root = resolve(__dirname, '..');
-const tmpRoot = join(root, 'tmp', 'pack-build');
+const tmpRoot = join(root, '.tmp', 'pack-build');
 
 const args = process.argv.slice(2);
 let disableAutoUpdate = false;
 let updateRepo;
 let updateRepoExplicit = false;
 let version;
-let output = join(root, 'tmp', 'openasar-build', 'app.asar');
+let output = join(root, '.tmp', 'openasar-build', 'app.asar');
 let macOSRecoveryTimeoutSeconds = process.env.OPENASAR_MACOS_RECOVERY_TIMEOUT_SECONDS ?? '90';
 
 for (let i = 0; i < args.length; i++) {

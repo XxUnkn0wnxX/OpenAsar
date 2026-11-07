@@ -126,7 +126,7 @@ const injectSettingsItem = () => {
   if (!advanced) return;
 
   const oaSetting = advanced.cloneNode(true);
-  const text = oaSetting.querySelector('[class*="text"]');
+  const text = oaSetting.querySelector('[class*="text"]') ?? oaSetting.querySelector('[data-text-variant]');
   const item = oaSetting.matches?.('[data-list-item-id^="settings-sidebar___"]') ? oaSetting : oaSetting.querySelector('[data-list-item-id^="settings-sidebar___"]');
 
   oaSetting.id = 'openasar-item';
