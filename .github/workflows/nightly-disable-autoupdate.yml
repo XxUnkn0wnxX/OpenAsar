@@ -74,7 +74,7 @@ jobs:
         fi
 
         mkdir -p "$INSTALL_ROOT"
-        if ! APP_DIR="$("$BOOTSTRAP_BIN" --no-zenity "$INSTALL_ROOT" stable "https://updates.discord.com/")"; then
+        if ! APP_DIR="$(bash scripts/linux-bootstrap.sh "$BOOTSTRAP_BIN" "$INSTALL_ROOT" stable "https://updates.discord.com/")"; then
           echo "Discord stable bootstrap failed"
           echo "Extracted tree:"
           find . -maxdepth 5 -print
@@ -173,7 +173,7 @@ jobs:
         fi
 
         mkdir -p "$INSTALL_ROOT"
-        if ! APP_DIR="$("$BOOTSTRAP_BIN" --no-zenity "$INSTALL_ROOT" canary "https://updates.discord.com/")"; then
+        if ! APP_DIR="$(bash scripts/linux-bootstrap.sh "$BOOTSTRAP_BIN" "$INSTALL_ROOT" canary "https://updates.discord.com/")"; then
           echo "Discord Canary bootstrap failed"
           echo "Extracted tree:"
           find . -maxdepth 5 -print
