@@ -73,9 +73,9 @@ When that contract is valid, every OpenAsar retention or self-update path target
 
 ### Default filling and config-panel preservation
 
-- `src/index.js` fills missing `openasar` defaults without replacing existing values. The fork-specific backend defaults are `VersionLock: ""` and `forceLegacyUpdater: false`.
+- `src/index.js` fills missing `openasar` defaults without replacing existing values. The fork-specific backend defaults are `VersionLock: ""`, `forceLegacyUpdater: false`, and `deduplicateCorsHeaders: false`.
 - [`Settings.reload`](../src/appSettings.js) refreshes the on-disk object before forced updater-mode writes. [`Settings.save`](../src/appSettings.js) refuses to overwrite a file modified externally after the current snapshot was loaded.
-- The hosted config panel does not currently know every fork-only key. [`mergeConfigFromPanel`](../src/config/index.js) restores `VersionLock` and `forceLegacyUpdater` from the current settings object when an older panel payload omits them.
+- The hosted config panel does not currently know every fork-only key. [`mergeConfigFromPanel`](../src/config/index.js) restores `VersionLock`, `forceLegacyUpdater`, and `deduplicateCorsHeaders` from the current settings object when an older panel payload omits them.
 - Detailed user-facing option semantics remain in [`docs/config.md`](config.md).
 
 ### `forceLegacyUpdater` contract
@@ -396,6 +396,7 @@ The architecture-critical suites are:
 | [`tests/pack-update-repo.test.js`](../tests/pack-update-repo.test.js) | Isolated end-to-end pack stamping for local origin, Actions, environment, and CLI repository sources. |
 | [`tests/asar-update-routing.test.js`](../tests/asar-update-routing.test.js) | Fork release URL selection, legacy channel fallback, ASAR target writes, and build-configured updater disable. |
 | [`tests/index-updater-mode.test.js`](../tests/index-updater-mode.test.js) | Bidirectional updater-mode persistence, startup order, and macOS guard gating. |
+| [`tests/deduplicate-cors-headers.test.js`](../tests/deduplicate-cors-headers.test.js) | Opt-in default-session CORS duplicate repair and listener preservation. |
 | [`tests/version-lock-validation.test.js`](../tests/version-lock-validation.test.js) | Empty/shorthand/absolute parsing, updater mode, mismatch handling, and dialog text. |
 | [`tests/version-lock-module-updater.test.js`](../tests/version-lock-module-updater.test.js) | Legacy host suppression, module continuity, and macOS/Windows/Linux platform mapping. |
 | [`tests/version-lock-bootstrap-order.test.js`](../tests/version-lock-bootstrap-order.test.js) | Native pin application and fail-closed ordering before first-run/splash. |

@@ -6,7 +6,7 @@ const { describe, test } = require('node:test');
 
 const readSource = relativePath => fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8');
 
-const makeOpenAsarConfig = forceLegacyUpdater => ({
+const makeOpenAsarConfig = (forceLegacyUpdater, deduplicateCorsHeaders = false) => ({
   setup: false,
   cmdPreset: 'perf',
   customFlags: '',
@@ -20,13 +20,16 @@ const makeOpenAsarConfig = forceLegacyUpdater => ({
   css: '',
   js: '',
   VersionLock: '',
-  forceLegacyUpdater
+  forceLegacyUpdater,
+  deduplicateCorsHeaders
 });
 
-const loadIndexWithMockSettings = ({ forceLegacyUpdater, existingUseNewUpdater }) => {
+const loadIndexWithMockSettings = ({ forceLegacyUpdater, existingUseNewUpdater, deduplicateCorsHeaders = false, omitCorsSetting = false }) => {
   const events = [];
+  const openasar = makeOpenAsarConfig(forceLegacyUpdater, deduplicateCorsHeaders);
+  if (omitCorsSetting) delete openasar.deduplicateCorsHeaders;
   const fakeSettings = {
-    openasar: makeOpenAsarConfig(forceLegacyUpdater),
+    openasar,
     useNewUpdater: existingUseNewUpdater,
     saveCount: 0,
     reload() {
@@ -49,12 +52,22 @@ const loadIndexWithMockSettings = ({ forceLegacyUpdater, existingUseNewUpdater }
     }
   };
 
+  const appListeners = {};
   const fakeApp = {
-    on: () => events.push('app.on'),
+    on: (name, listener) => { events.push(`app.on:${name}`); appListeners[name] = listener; },
+    once: (name, listener) => { events.push(`app.once:${name}`); appListeners[name] = listener; },
+    isReady: () => false,
     prependListener: () => events.push('app.prependListener'),
     relaunch: () => {},
     exit: () => {}
   };
+  const fakeSession = {};
+  Object.defineProperty(fakeSession, 'defaultSession', {
+    get() {
+      if (!fakeApp.isReady()) throw new Error('defaultSession accessed before app ready');
+      return { webRequest: { onHeadersReceived() {} } };
+    }
+  });
   const fakeBootstrap = () => {
     events.push('bootstrap');
     return undefined;
@@ -68,7 +81,7 @@ const loadIndexWithMockSettings = ({ forceLegacyUpdater, existingUseNewUpdater }
   process.resourcesPath = '/tmp/openasar-resources';
 
   Module._load = function(request, parent, isMain) {
-    if (request === 'electron') return { app: fakeApp };
+    if (request === 'electron') return { app: fakeApp, session: fakeSession };
     if (request === './injection') {
       return {
         detectBetterDiscordWrapper: () => ({ valid: false, reason: 'mocked' }),
@@ -101,7 +114,7 @@ const loadIndexWithMockSettings = ({ forceLegacyUpdater, existingUseNewUpdater }
     process.resourcesPath = originalResourcesPath;
   }
 
-  return { fakeSettings, events };
+  return { fakeSettings, events, appListeners };
 };
 
 describe('index USE_NEW_UPDATER persistence contract', () => {
@@ -189,5 +202,23 @@ describe('index USE_NEW_UPDATER persistence contract', () => {
     assert.notEqual(helperCallIndex, -1);
     assert.equal(guardFunctionIndex < darwinReturnIndex, true);
     assert.equal(darwinReturnIndex < helperCallIndex, true);
+  });
+
+  test('adds missing CORS option as false and saves defaults once', () => {
+    const { fakeSettings } = loadIndexWithMockSettings({ forceLegacyUpdater: false, existingUseNewUpdater: true, omitCorsSetting: true });
+    assert.equal(fakeSettings.openasar.deduplicateCorsHeaders, false);
+    assert.equal(fakeSettings.saveCount, 1);
+  });
+
+  test('preserves explicit CORS values and enables only for strict true', () => {
+    for (const value of [ true, false, 'true', 1 ]) {
+      const { events, fakeSettings } = loadIndexWithMockSettings({
+        forceLegacyUpdater: false,
+        existingUseNewUpdater: true,
+        deduplicateCorsHeaders: value
+      });
+      assert.equal(fakeSettings.openasar.deduplicateCorsHeaders, value);
+      assert.equal(events.includes('app.on:session-created'), value === true);
+    }
   });
 });

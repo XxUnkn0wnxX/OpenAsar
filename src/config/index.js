@@ -11,7 +11,8 @@ const restart = () => {
 
 const backendOnlyKeys = [
   'VersionLock',
-  'forceLegacyUpdater'
+  'forceLegacyUpdater',
+  'deduplicateCorsHeaders'
 ];
 
 const mergeConfigFromPanel = next => {

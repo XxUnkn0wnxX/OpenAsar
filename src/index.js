@@ -1,5 +1,5 @@
 const { basename, dirname, join } = require('path');
-const { app } = require('electron');
+const { app, session } = require('electron');
 const { detectBetterDiscordWrapper, getOpenAsarArchivePath } = require('./injection');
 
 global.log = (area, ...args) => console.log(`[\x1b[38;2;88;101;242mOpenAsar\x1b[0m > ${area}]`, ...args); // Make log global for easy usage everywhere
@@ -52,7 +52,8 @@ const openAsarDefaults = {
   css: '',
   js: '',
   VersionLock: '',
-  forceLegacyUpdater: false
+  forceLegacyUpdater: false,
+  deduplicateCorsHeaders: false
 };
 
 const ensureOpenAsarDefaults = () => {
@@ -74,6 +75,8 @@ const ensureOpenAsarDefaults = () => {
 };
 
 ensureOpenAsarDefaults();
+
+require('./utils/deduplicateCorsHeaders')(app, session, oaConfig.deduplicateCorsHeaders === true);
 
 const enforceLegacyUpdaterSetting = (reason, synchronizeNativeMode = false) => {
   settings.reload();

@@ -1,5 +1,11 @@
 # 📝 Changelog
 
+## 2026-11-09
+
+### Opt-in CORS response compatibility
+
+- Added `openasar.deduplicateCorsHeaders`, disabled by default, to collapse identical valid `Access-Control-Allow-Origin` duplicates on the default Electron session while preserving conflicting values and other headers.
+
 ## 2026-09-03
 
 ### Fork-aware packaging and releases

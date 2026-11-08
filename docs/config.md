@@ -69,6 +69,20 @@ Injects custom CSS into the main Discord window. If `css` or `js` is set, OpenAs
 
 Runs custom JavaScript in the main Discord window after DOM ready. If `js` or `css` is set, OpenAsar removes Discord's content security policy response header so injection can work.
 
+### `deduplicateCorsHeaders`
+
+Defaults to `false`. OpenAsar adds and saves this key on startup when it is missing, without overwriting an existing value. The setting is available on every Discord channel and is configured separately in each channel's main `settings.json`.
+
+To enable it, add this entry inside the existing `openasar` object, then fully quit and reopen that Discord client:
+
+```json
+"deduplicateCorsHeaders": true
+```
+
+When set to boolean `true`, OpenAsar collapses identical `Access-Control-Allow-Origin` response values into one on the default Electron session. This works with repeated header lines, differently cased header names, and identical values combined into a comma-separated field. It retains the same valid server-provided origin and leaves conflicting, empty, wildcard, `null`, or invalid values unchanged. Other headers, including repeated `Set-Cookie` values, are preserved.
+
+The option works independently of custom CSS and JavaScript. It preserves existing header handlers, including BetterDiscord's CSP handling, and survives saves from the hosted OpenAsar config panel. Set it to `false` and restart the client to disable it. This is a compatibility workaround for malformed responses; it does not select or broaden an allowed origin.
+
 ### `forceLegacyUpdater`
 
 `openasar.forceLegacyUpdater` is a platform-neutral updater-mode selector. On every startup, OpenAsar ensures the top-level setting is its inverse: `forceLegacyUpdater: false` writes `USE_NEW_UPDATER: true`, while `forceLegacyUpdater: true` writes `USE_NEW_UPDATER: false`. When legacy mode is forced, OpenAsar also blocks Discord attempts to save the setting back to `true`, reinforces `false` during quit, and uses the legacy updater path where Discord still supports it.
